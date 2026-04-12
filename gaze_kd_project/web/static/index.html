@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gaze 眼动演示</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Gaze 眼动效果测试</h1>
+      <p class="sub">
+        使用摄像头截取画面发送到本机模型；服务端先用 OpenCV Haar 检测正脸并裁剪，再预测注视点，并在画面上画出人脸框（绿色虚线）。
+        标签坐标约定与训练一致（约 <code>[-1, 1]</code>）；可用滑块调节映射幅度。
+      </p>
+    </header>
+
+    <section class="panel">
+      <div class="video-box">
+        <video id="cam" autoplay playsinline muted></video>
+        <canvas id="overlay" width="640" height="480"></canvas>
+      </div>
+      <div class="controls">
+        <button type="button" id="btnStart">开启摄像头</button>
+        <button type="button" id="btnPredict" disabled>预测一帧</button>
+        <label class="row">
+          <input type="checkbox" id="chkLoop" />
+          连续预测（约 4 FPS）
+        </label>
+        <label class="row">
+          映射半径（像素）
+          <input type="range" id="radius" min="40" max="280" value="140" />
+          <span id="radiusVal">140</span>
+        </label>
+        <p class="hint" id="status">请先点击「开启摄像头」并允许浏览器权限。</p>
+        <p class="coords" id="coords">gaze: —</p>
+      </div>
+    </section>
+
+    <section class="panel upload">
+      <h2>或上传图片</h2>
+      <input type="file" id="file" accept="image/*" />
+      <canvas id="uploadCanvas" width="640" height="480"></canvas>
+      <button type="button" id="btnUploadPredict" disabled>预测上传图</button>
+    </section>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
