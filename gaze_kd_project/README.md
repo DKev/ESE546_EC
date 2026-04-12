@@ -16,6 +16,47 @@ cd gaze_kd_project
 pip install -r requirements.txt
 ```
 
+### GPU 上跑一通（命令备忘）
+
+在新机器上请**先**从 [pytorch.org](https://pytorch.org) 安装带 **CUDA** 的 `torch` / `torchvision`，再 `pip install -r requirements.txt`（避免只装到 CPU 版）。`data/synthetic/` 与 `checkpoints/` 默认被 `.gitignore` 忽略，若仓库里没有数据，需要重新生成或拷贝整个 `data/synthetic`。
+
+```bash
+cd gaze_kd_project
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# 1) 按官网安装 CUDA 版 PyTorch 后：
+pip install -r requirements.txt
+
+# 2) 若无合成数据，先生成：
+python scripts/generate_synthetic_gaze_dataset.py --out_root data/synthetic
+
+# 3) 训练（默认 20 epochs；可按需加 --metrics_csv runs/m_teacher.csv 等）：
+python train_teacher.py \
+  --train_csv data/synthetic/train.csv \
+  --val_csv data/synthetic/val.csv \
+  --data_root data/synthetic \
+  --checkpoint checkpoints/teacher_best.pt \
+  --epochs 20
+
+python train_student.py \
+  --train_csv data/synthetic/train.csv \
+  --val_csv data/synthetic/val.csv \
+  --data_root data/synthetic \
+  --checkpoint checkpoints/student_baseline_best.pt \
+  --epochs 20
+
+python train_kd.py \
+  --teacher_ckpt checkpoints/teacher_best.pt \
+  --train_csv data/synthetic/train.csv \
+  --val_csv data/synthetic/val.csv \
+  --data_root data/synthetic \
+  --checkpoint checkpoints/student_kd_best.pt \
+  --epochs 20
+```
+
+DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_size 32`。
+
 ## Project layout
 
 | Path | Description |
