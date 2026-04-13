@@ -5,7 +5,7 @@ Run from the ``gaze_kd_project`` directory:
 
     python train_student.py --train_csv data/train.csv --val_csv data/val.csv
     python train_student.py --student_arch shufflenet_v2_x0_5 ...  # ~0.34M params
-    python train_student.py --student_arch gaze_micro ...  # ~0.10M params (KD-friendly)
+    python train_student.py --student_arch gaze_micro ...  # ~50k params (KD-friendly)
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
             STUDENT_ARCH_SHUFFLENET_V2_X0_5,
             STUDENT_ARCH_GAZE_MICRO,
         ),
-        help="Student backbone (gaze_micro ~0.10M params, no ImageNet init)",
+        help="Student backbone (gaze_micro ~50k params, no ImageNet init)",
     )
     p.add_argument(
         "--metrics_csv",

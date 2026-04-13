@@ -73,7 +73,7 @@ def parse_args() -> argparse.Namespace:
             STUDENT_ARCH_SHUFFLENET_V2_X0_5,
             STUDENT_ARCH_GAZE_MICRO,
         ),
-        help="Student backbone (gaze_micro ~0.10M for extreme KD; shufflenet ~0.34M)",
+        help="Student backbone (gaze_micro ~50k for extreme KD; shufflenet ~0.34M)",
     )
     p.add_argument(
         "--metrics_csv",

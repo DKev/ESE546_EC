@@ -23,7 +23,7 @@ _STUDENT_ARCHS = (
 
 class GazeMicroNet(nn.Module):
     """
-    Depthwise-separable CNN for 224x224 RGB -> 2D gaze (~101k parameters).
+    Depthwise-separable CNN for 224x224 RGB -> 2D gaze (~49k parameters).
 
     No ImageNet weights; ``pretrained`` is ignored for this arch.
     """
@@ -42,19 +42,19 @@ class GazeMicroNet(nn.Module):
             )
 
         self.stem = nn.Sequential(
-            nn.Conv2d(3, 48, 3, 2, 1, bias=False),
-            nn.BatchNorm2d(48),
+            nn.Conv2d(3, 36, 3, 2, 1, bias=False),
+            nn.BatchNorm2d(36),
             nn.ReLU(inplace=True),
         )
         self.layers = nn.Sequential(
-            ds_block(48, 80, 2),
-            ds_block(80, 120, 2),
-            ds_block(120, 160, 2),
-            ds_block(160, 176, 2),
-            ds_block(176, 176, 2),
+            ds_block(36, 50, 2),
+            ds_block(50, 76, 2),
+            ds_block(76, 102, 2),
+            ds_block(102, 124, 2),
+            ds_block(124, 136, 2),
         )
         self.pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Linear(176, 2)
+        self.fc = nn.Linear(136, 2)
 
     def forward(self, x):  # type: ignore[no-untyped-def]
         x = self.stem(x)
@@ -121,7 +121,7 @@ def build_student(pretrained: bool = True, arch: str = STUDENT_ARCH_MOBILENET_V3
         pretrained: If True, load torchvision ImageNet weights for torchvision backbones
             (ignored for ``gaze_micro``).
         arch: ``mobilenet_v3_small`` (~1.5M), ``shufflenet_v2_x0_5`` (~0.34M),
-            or ``gaze_micro`` (~0.10M custom CNN).
+            or ``gaze_micro`` (~50k custom CNN).
     """
     arch = normalize_student_arch(arch)
     if arch == STUDENT_ARCH_GAZE_MICRO:

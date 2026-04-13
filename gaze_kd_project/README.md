@@ -1,6 +1,6 @@
 # Lightweight Gaze Estimation + Knowledge Distillation (PyTorch)
 
-Course-style project: **2D gaze regression** from face images using a **teacher** (default in docs: **MobileNetV2**), a **student** (default: **MobileNetV3-Small**), and **knowledge distillation** (MSE to teacher + MSE to labels). You can use **`--teacher_arch mobilenet_v3_small`** if that backbone fits your data best, and smaller students: **`--student_arch shufflenet_v2_x0_5`** (~0.34M) or **`gaze_micro`** (~0.10M, custom CNN, no ImageNet weights). The teacher is deliberately lighter than a classic ResNet so small datasets overfit less; you can still use **ResNet18** via `--teacher_arch resnet18`. The goal is to compare **accuracy**, **model size**, and **inference speed**, showing that distillation can improve the small student for mobile-style deployment.
+Course-style project: **2D gaze regression** from face images using a **teacher** (default in docs: **MobileNetV2**), a **student** (default: **MobileNetV3-Small**), and **knowledge distillation** (MSE to teacher + MSE to labels). You can use **`--teacher_arch mobilenet_v3_small`** if that backbone fits your data best, and smaller students: **`--student_arch shufflenet_v2_x0_5`** (~0.34M) or **`gaze_micro`** (~50k params, custom CNN, no ImageNet weights). The teacher is deliberately lighter than a classic ResNet so small datasets overfit less; you can still use **ResNet18** via `--teacher_arch resnet18`. The goal is to compare **accuracy**, **model size**, and **inference speed**, showing that distillation can improve the small student for mobile-style deployment.
 
 **中文分步教程（从零到训练 / 评估 / 网页）：** [docs/GETTING_STARTED_ZH.md](docs/GETTING_STARTED_ZH.md)  
 **真实数据从哪下、怎么变成 CSV：** [docs/data_sources.md](docs/data_sources.md) 开头的「真实数据怎么拿」  
@@ -73,7 +73,7 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 | `datasets/mpiigaze_dataset.py` | MPIIGaze `Data/Normalized` `.mat` → tensors |
 | `datasets/factory.py` | `--dataset csv` or `mpiigaze` wiring for train / eval |
 | `models/teacher_model.py` | Teacher: **ResNet18**, **MobileNetV2**, or **MobileNetV3-Small** → 2 outputs |
-| `models/student_model.py` | Student: **MV3-Small** (default), **ShuffleNetV2 x0.5**, or **gaze_micro** (~100k params) → 2 outputs |
+| `models/student_model.py` | Student: **MV3-Small** (default), **ShuffleNetV2 x0.5**, or **gaze_micro** (~50k params) → 2 outputs |
 | `train_teacher.py` | Supervised teacher training (MSE) |
 | `train_student.py` | Supervised student baseline (MSE) |
 | `train_kd.py` | Distilled student: `MSE(s,y) + alpha * MSE(s, teacher)` |
@@ -217,7 +217,7 @@ python train_student.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_perso
 python train_kd.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --mpi_max_train_samples 10000 --amp --num_workers 0 --teacher_ckpt checkpoints\teacher_mpi.pt --checkpoint checkpoints\student_kd_mpi.pt --epochs 20 --metrics_csv runs\m_kd_mpi.csv
 ```
 
-**Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; **one line** per command. This block uses **teacher** `mobilenet_v3_small` and **student** `gaze_micro` (~100k params):
+**Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; **one line** per command. This block uses **teacher** `mobilenet_v3_small` and **student** `gaze_micro` (~50k params):
 
 ```powershell
 python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --teacher_arch mobilenet_v3_small --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/teacher_mpi.pt --epochs 20 --metrics_csv runs/m_teacher_mpi.csv
@@ -417,7 +417,7 @@ python train_teacher.py \
 
 ### 2) Student baseline (no KD)
 
-Default student backbone is **MobileNetV3-Small**. Use **`--student_arch shufflenet_v2_x0_5`** (~0.34M) or **`gaze_micro`** (~0.10M, from scratch) for smaller models.
+Default student backbone is **MobileNetV3-Small**. Use **`--student_arch shufflenet_v2_x0_5`** (~0.34M) or **`gaze_micro`** (~50k, from scratch) for smaller models.
 
 ```bash
 python train_student.py \

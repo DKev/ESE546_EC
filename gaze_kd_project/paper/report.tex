@@ -117,8 +117,15 @@ Table~\ref{tab:main} summarizes representative numbers. \emph{Replace these entr
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{efficiency.pdf}
-  \caption{Parameter count (millions) and per-image latency on a dummy input (batch size one).}
+  \caption{Parameter count (thousands; bar labels show M/k) and per-image latency on a dummy input (batch size one).}
   \label{fig:eff}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{predict_speed.pdf}
+  \caption{Prediction latency (ms per image) and approximate FPS on the same dummy-input protocol as \texttt{evaluate.py} (batch size one after warmup).}
+  \label{fig:speed}
 \end{figure}
 
 \subsection{Teacher backbone: ResNet-18 vs.\ MobileNet-style models}

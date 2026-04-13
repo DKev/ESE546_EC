@@ -3,7 +3,11 @@
 Build matplotlib figures for the course report.
 
 Reads optional training metric CSVs (from ``--metrics_csv``) and a merged evaluation
-summary JSON (from ``scripts/build_eval_summary.py``). If files are missing, use
+summary JSON (from ``scripts/build_eval_summary.py``). The efficiency figure uses
+parameters in **thousands** (×10³) so small students (e.g. ``gaze_micro`` ~50k) stay
+visible next to a MobileNetV3-Small teacher (~1.5M). A separate **predict_speed.pdf**
+compares ms/image (and approximate FPS). ``teacher_arch`` / ``student_arch`` from
+``evaluate.py`` JSON appear in subtitles when present. If files are missing, use
 ``--demo`` to emit illustrative curves for LaTeX compilation.
 
 Usage (from ``gaze_kd_project``)::
@@ -47,6 +51,38 @@ def read_kd_csv(path: Path) -> tuple[list[int], list[float]]:
             epochs.append(int(row["epoch"]))
             val_gt.append(float(row["val_mse_gt"]))
     return epochs, val_gt
+
+
+def _human_param_count(n: float) -> str:
+    """Format parameter count for bar annotations (n is raw count from evaluate JSON)."""
+    if n >= 1e6:
+        return f"{n / 1e6:.2f}M"
+    if n >= 1e3:
+        return f"{n / 1e3:.0f}k"
+    return str(int(n))
+
+
+def _arch_caption(summary: dict) -> str:
+    """One-line caption from evaluate.py JSON fields (teacher_arch / student_arch)."""
+    if not summary:
+        return ""
+    parts: list[str] = []
+    te = summary.get("teacher") or {}
+    ta = te.get("teacher_arch")
+    if isinstance(ta, str) and ta.strip():
+        parts.append(f"teacher={ta.strip()}")
+    sb = summary.get("student_baseline") or {}
+    sk = summary.get("student_kd") or {}
+    sa = sb.get("student_arch") or sk.get("student_arch")
+    if isinstance(sa, str) and sa.strip():
+        parts.append(f"student={sa.strip()}")
+    return " · ".join(parts)
+
+
+def _fps_from_entry(entry: dict | None, ms: float) -> float:
+    if entry and entry.get("fps") is not None:
+        return float(entry["fps"])
+    return (1000.0 / ms) if ms > 0 else 0.0
 
 
 def plot_loss_curves(
@@ -115,23 +151,28 @@ def plot_metric_bars(summary: dict, out_path: Path, demo: bool) -> None:
     ax.set_title("Test/val metrics by model")
     ax.legend(fontsize=8)
     ax.grid(True, axis="y", alpha=0.3)
+    cap = _arch_caption(summary)
+    if cap:
+        fig.suptitle(cap, fontsize=8, y=1.02)
     fig.tight_layout()
     fig.savefig(out_path, format="pdf")
     plt.close(fig)
 
 
 def plot_efficiency(summary: dict, out_path: Path, demo: bool) -> None:
+    # Use params in thousands so MV3-Small (~1.5M) and gaze_micro (~0.1M) are both visible.
     if demo or not summary:
         names = ["Teacher", "Student\n(baseline)", "Student\n+ KD"]
-        params_m = [11.2, 1.0, 1.0]
-        ms = [1.25, 0.35, 0.36]
+        params_k = [1520.0, 49.4, 49.4]
+        params_raw = [1.52e6, 49_426, 49_426]
+        ms = [1.25, 0.28, 0.29]
     else:
         names = ["Teacher", "Student\n(baseline)", "Student\n+ KD"]
-        params_m = [
-            summary["teacher"]["params"] / 1e6,
-            summary["student_baseline"]["params"] / 1e6,
-            summary["student_kd"]["params"] / 1e6,
-        ]
+        p0 = float(summary["teacher"]["params"])
+        p1 = float(summary["student_baseline"]["params"])
+        p2 = float(summary["student_kd"]["params"])
+        params_raw = [p0, p1, p2]
+        params_k = [p / 1e3 for p in params_raw]
         ms = [
             summary["teacher"]["ms_per_image"],
             summary["student_baseline"]["ms_per_image"],
@@ -139,17 +180,82 @@ def plot_efficiency(summary: dict, out_path: Path, demo: bool) -> None:
         ]
 
     fig, axes = plt.subplots(1, 2, figsize=(6.8, 3.4))
-    axes[0].bar(names, params_m, color=["#4C72B0", "#55A868", "#C44E52"])
-    axes[0].set_ylabel("Parameters (millions)")
+    colors = ["#4C72B0", "#55A868", "#C44E52"]
+    bars0 = axes[0].bar(names, params_k, color=colors)
+    axes[0].set_ylabel("Parameters (×10³)")
     axes[0].set_title("Model size")
     axes[0].grid(True, axis="y", alpha=0.3)
+    ymax0 = max(params_k) * 1.18 if params_k else 1.0
+    axes[0].set_ylim(0, ymax0)
+    for bar, pr in zip(bars0, params_raw):
+        h = bar.get_height()
+        axes[0].text(
+            bar.get_x() + bar.get_width() / 2,
+            h + 0.02 * ymax0,
+            _human_param_count(pr),
+            ha="center",
+            va="bottom",
+            fontsize=7,
+        )
 
-    axes[1].bar(names, ms, color=["#4C72B0", "#55A868", "#C44E52"])
+    bars1 = axes[1].bar(names, ms, color=colors)
     axes[1].set_ylabel("ms / image")
     axes[1].set_title("Latency (dummy input, batch=1)")
     axes[1].grid(True, axis="y", alpha=0.3)
+    ymax1 = max(ms) * 1.2 if ms else 1.0
+    for bar in bars1:
+        h = bar.get_height()
+        axes[1].text(
+            bar.get_x() + bar.get_width() / 2,
+            h + 0.02 * ymax1,
+            f"{h:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+        )
 
-    fig.suptitle("Efficiency comparison")
+    cap = _arch_caption(summary) if not demo and summary else ""
+    fig.suptitle("Efficiency comparison" + (f" — {cap}" if cap else ""), fontsize=9, y=1.03)
+    fig.tight_layout()
+    fig.savefig(out_path, format="pdf")
+    plt.close(fig)
+
+
+def plot_predict_speed(summary: dict, out_path: Path, demo: bool) -> None:
+    """Bar chart of ms/image with FPS annotations (from JSON ``fps`` or 1000/ms)."""
+    names = ["Teacher", "Student\n(baseline)", "Student\n+ KD"]
+    colors = ["#4C72B0", "#55A868", "#C44E52"]
+    keys = ("teacher", "student_baseline", "student_kd")
+
+    if demo or not summary:
+        ms = [1.25, 0.28, 0.29]
+        entries: tuple[dict | None, dict | None, dict | None] = (None, None, None)
+    else:
+        ms = [float(summary[k]["ms_per_image"]) for k in keys]
+        entries = tuple(summary[k] for k in keys)
+
+    fps_list = [_fps_from_entry(e, m) for e, m in zip(entries, ms)]
+
+    fig, ax = plt.subplots(figsize=(6.4, 3.5))
+    bars = ax.bar(names, ms, color=colors)
+    ax.set_ylabel("ms / image")
+    ax.set_title("Prediction speed (lower ms = faster; dummy 224×224, batch = 1)")
+    ax.grid(True, axis="y", alpha=0.3)
+    ymax = max(ms) * 1.3 if ms else 1.0
+    ax.set_ylim(0, ymax)
+    for bar, m, f in zip(bars, ms, fps_list):
+        h = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            h + 0.02 * ymax,
+            f"{m:.2f} ms\n≈ {f:.0f} FPS",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+        )
+
+    cap = _arch_caption(summary) if not demo and summary else ""
+    fig.suptitle("Inference speed comparison" + (f" — {cap}" if cap else ""), fontsize=9, y=1.03)
     fig.tight_layout()
     fig.savefig(out_path, format="pdf")
     plt.close(fig)
@@ -221,6 +327,8 @@ def main() -> None:
     bar_demo = args.demo or not {"teacher", "student_baseline", "student_kd"}.issubset(summary.keys())
     plot_metric_bars(summary if not bar_demo else {}, out_dir / "metrics_compare.pdf", demo=bar_demo)
     plot_efficiency(summary if not bar_demo else {}, out_dir / "efficiency.pdf", demo=bar_demo)
+    plot_predict_speed(summary if not bar_demo else {}, out_dir / "predict_speed.pdf", demo=bar_demo)
+    print("Wrote predict_speed.pdf")
 
     if args.scatter_npz and Path(args.scatter_npz).is_file():
         plot_scatter_npz(Path(args.scatter_npz), out_dir / "gaze_scatter.pdf")
