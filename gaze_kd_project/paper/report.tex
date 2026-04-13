@@ -35,7 +35,7 @@
 \begin{document}
 
 \begin{abstract}
-We train small CNNs to regress 2D gaze $(g_x,g_y)$ from face images, with an eye toward models that could run on a phone. The implementation swaps torchvision backbones for the teacher (ResNet-18, MobileNetV2, or MobileNetV3-Small) and gives several student options, including a hand-built depthwise network (\texttt{gaze\_micro}, on the order of $50$k parameters). Besides plain MSE on labels we try knowledge distillation: add an MSE term that pulls the student toward the teacher's output. On MPIIGaze we do not use every training frame each epoch; we cap at $10{,}000$ samples per epoch with a fixed order flag in the dataloader, but we still evaluate on the full validation subjects. With the same number of epochs and similar hyperparameters, that cap actually gave us lower validation error than when we tried to chew through the entire training split first---we do not claim 10k always wins, only that it happened in our setup and probably has to do with overfitting and training time per epoch. ResNet-18 as a teacher still looked worse on val than the smaller nets. Numbers in the paper come from \texttt{evaluate.py} exports and the plotting scripts in the repo.
+We train small CNNs to regress 2D gaze $(g_x,g_y)$ from face images, with an eye toward models that could run on a phone. The implementation swaps torchvision backbones for the teacher (ResNet-18, MobileNetV2, or MobileNetV3-Small) and gives several student options, including a hand-built depthwise network (\texttt{gaze\_micro}, on the order of $50$k parameters). Besides plain MSE on labels we try knowledge distillation: add an MSE term that pulls the student toward the teacher's output. On MPIIGaze we do \emph{not} use the full official splits: we take a fixed subset of $10{,}000$ training images and $3{,}000$ validation images (deterministic ordering from the loader flags \texttt{--mpi\_max\_train\_samples} / \texttt{--mpi\_max\_val\_samples}), i.e.\ a deliberately small sample for faster runs on a course machine---not a new sample draw every epoch, just a capped pool that stays the same across epochs. ResNet-18 as a teacher still looked worse on our val subset than the smaller nets. Table numbers come from \texttt{evaluate.py} on that $3{,}000$-image validation subset.
 \end{abstract}
 
 \maketitle
@@ -84,7 +84,7 @@ MPIIGaze~\cite{zhang15mpiigaze} is the dataset people cite for ``in the wild'' l
 
 \subsection{Data and protocol}
 
-We trained on MPIIGaze normalized patches via \texttt{--dataset mpiigaze}. Train and val use different people (e.g.\ held-out \texttt{p14}, \texttt{p15} in the README example). The important detail for reproducing our table: \textbf{train is subsampled to 10{,}000 frames per epoch} (\texttt{--mpi\_max\_train\_samples 10000}), deterministic order. Val is \textbf{not} subsampled.
+We trained on MPIIGaze normalized patches via \texttt{--dataset mpiigaze}, with disjoint train vs.\ validation participants as usual (e.g.\ held-out \texttt{p14}, \texttt{p15}). For reproducibility and runtime we \textbf{subsample splits}: \texttt{--mpi\_max\_train\_samples 10000} and \texttt{--mpi\_max\_val\_samples 3000}. That means the loader exposes a fixed pool of $10{,}000$ train and $3{,}000$ val examples (deterministic order over participants/days/frames); every epoch cycles through the same pools, not a fresh random mini-corpus each time. Reported metrics are on that $3{,}000$-point validation subset only, not the full val persons.
 
 We log curves with \texttt{--metrics\_csv}. After training, \texttt{evaluate.py --export\_json} three times, then \texttt{build\_eval\_summary.py}, then \texttt{make\_paper\_figures.py} (outputs PNG at 300\,dpi by default). The loss figure only uses the CSVs; the bar charts and size/speed figures read the merged JSON. If a KD run went 40 epochs, the plot script clips to the first 20 points by default so the x-axis is readable (\texttt{--max\_plot\_epochs}).
 
@@ -94,7 +94,7 @@ Table~\ref{tab:main} matches the merged eval JSON used for the bar charts. Figur
 
 \begin{table}[H]
   \centering
-  \caption{MPIIGaze validation split (\texttt{mpi\_eval\_split\,=\,val}), batch-1 latency on the same machine as training. Numbers from merged \texttt{evaluate.py} JSON (teacher/student checkpoints as in the repo README).}
+  \caption{Metrics on our $3{,}000$-image MPIIGaze validation subset (\texttt{mpi\_eval\_split\,=\,val}, \texttt{--mpi\_max\_val\_samples\,=\,3000}). Batch-1 latency on the training machine. Values from merged \texttt{evaluate.py} JSON.}
   \label{tab:main}
   \begin{tabular}{lcccccc}
     \toprule
@@ -135,13 +135,11 @@ Table~\ref{tab:main} matches the merged eval JSON used for the bar charts. Figur
   \label{fig:speed}
 \end{figure}
 
-\subsection{Training on 10k examples per epoch}
+\subsection{Why only 10k / 3k samples}
 
-Full MPIIGaze training is huge. One epoch over everything was slow enough that we started subsampling. After we fixed val to the full held-out people, we were surprised that 10k-per-epoch looked better on val than ``eat the whole train set'' with the same epoch count and roughly the same learning rate.
+MPIIGaze at full scale is slow to iterate on a single GPU. We capped train at $10{,}000$ and val at $3{,}000$ examples so one epoch stays short and we could actually finish ablations for the assignment. That is a self-imposed subset of the official split logic (same person-based partition, fewer frames), not a claim about matching the standard benchmark numbers. If you rerun our commands, keep both caps or the metrics in Table~\ref{tab:main} will not line up.
 
-Smaller models (especially \texttt{gaze\_micro}) have no business memorizing a million crops in 20 epochs anyway. Truncating each epoch might act like a crude regularizer. Shorter epochs also mean we actually finish updates in reasonable wall time, which matters when you are iterating on bugs. A third boring possibility: MPIIGaze is messy across sessions; a fixed 10k slice is not representative of the full distribution, so comparing to ``full data'' without retuning steps or LR is apples-to-oranges.
-
-What we would try next if this were not a deadline: sweep $N$, train longer on full data with decay, and report angular error instead of $(g_x,g_y)$ MSE.
+A proper follow-up would drop the caps (or scale them up), tune longer, and report angular error like the MPIIGaze papers do.
 
 \subsection{ResNet-18 vs.\ smaller teachers}
 
@@ -157,7 +155,7 @@ MSE in normalized label space is easy to implement but not what papers usually r
 
 Exporting the student to ONNX or TFLite would be the next engineering step if this were a product. For the course, the PyTorch timings were enough.
 
-The 10k cap is a reproducibility footnote: if someone reruns our commands, they need the same \texttt{--mpi\_max\_train\_samples}, the same val persons, and the same arch flags or the numbers will drift.
+Reproducibility: same \texttt{--mpi\_max\_train\_samples 10000}, \texttt{--mpi\_max\_val\_samples 3000}, same held-out persons, and same arch flags, or Table~\ref{tab:main} drifts.
 
 \section*{References}
 
