@@ -8,7 +8,9 @@ parameters in **thousands** (×10³) so small students (e.g. ``gaze_micro`` ~50k
 visible next to a MobileNetV3-Small teacher (~1.5M). A separate **predict_speed.pdf**
 compares ms/image (and approximate FPS). ``teacher_arch`` / ``student_arch`` from
 ``evaluate.py`` JSON appear in subtitles when present. If files are missing, use
-``--demo`` to emit illustrative curves for LaTeX compilation.
+``--demo`` to emit illustrative curves for LaTeX compilation. Loss curves from CSVs are
+trimmed to the first **20 epochs** by default (``--max_plot_epochs``) so long KD runs do not
+crowd the x-axis; use ``--max_plot_epochs 0`` to plot every logged epoch.
 
 Usage (from ``gaze_kd_project``)::
 
@@ -85,12 +87,22 @@ def _fps_from_entry(entry: dict | None, ms: float) -> float:
     return (1000.0 / ms) if ms > 0 else 0.0
 
 
+def _trim_series_head(
+    max_epochs: int, epochs: list[int], *series: list[float]
+) -> tuple[list[int], ...]:
+    """Keep only the first ``max_epochs`` rows (same index range for all series)."""
+    if max_epochs <= 0 or len(epochs) <= max_epochs:
+        return (epochs,) + tuple(series)
+    return (epochs[:max_epochs],) + tuple(s[:max_epochs] for s in series)
+
+
 def plot_loss_curves(
     out_path: Path,
     teacher: Path | None,
     student: Path | None,
     kd: Path | None,
     demo: bool,
+    max_plot_epochs: int = 20,
 ) -> None:
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     if demo:
@@ -101,9 +113,13 @@ def plot_loss_curves(
         ax.set_title("Validation error vs. epoch (example — use real CSVs after training)")
     else:
         assert teacher is not None and student is not None and kd is not None
-        e1, _, v1 = read_supervised_csv(teacher)
-        e2, _, v2 = read_supervised_csv(student)
+        e1, _tr1, v1 = read_supervised_csv(teacher)
+        e2, _tr2, v2 = read_supervised_csv(student)
         e3, v3 = read_kd_csv(kd)
+        if max_plot_epochs > 0:
+            e1, _, v1 = _trim_series_head(max_plot_epochs, e1, _tr1, v1)
+            e2, _, v2 = _trim_series_head(max_plot_epochs, e2, _tr2, v2)
+            e3, v3 = _trim_series_head(max_plot_epochs, e3, v3)
         ax.plot(e1, v1, marker="o", markersize=3, label="Teacher val MSE")
         ax.plot(e2, v2, marker="o", markersize=3, label="Student baseline val MSE")
         ax.plot(e3, v3, marker="o", markersize=3, label="Student + KD (val MSE vs. GT)")
@@ -298,6 +314,12 @@ def main() -> None:
     p.add_argument("--metrics_kd", type=str, default="")
     p.add_argument("--scatter_npz", type=str, default="", help="optional predictions from evaluate.py")
     p.add_argument("--demo", action="store_true", help="use placeholder data when files missing")
+    p.add_argument(
+        "--max_plot_epochs",
+        type=int,
+        default=20,
+        help="loss_curves.pdf: use only the first N rows from each metrics CSV (default 20); 0 = no trim",
+    )
     args = p.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -323,18 +345,17 @@ def main() -> None:
             "(and do not use --demo)."
         )
     else:
-        print(
-            "loss_curves.pdf: from CSVs",
-            mt,
-            ms,
-            mk,
-        )
+        msg = f"loss_curves.pdf: from CSVs {mt} {ms} {mk}"
+        if args.max_plot_epochs > 0:
+            msg += f" (first {args.max_plot_epochs} epochs per series)"
+        print(msg)
     plot_loss_curves(
         out_dir / "loss_curves.pdf",
         mt,
         ms,
         mk,
         demo=use_demo_curves,
+        max_plot_epochs=args.max_plot_epochs,
     )
 
     # Fix demo logic for bars: demo flag OR incomplete summary

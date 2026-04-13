@@ -286,6 +286,8 @@ Merge the three JSON files, then build PDFs under **`paper/figures/`**.
 - `runs/m_student_mpi.csv`
 - `runs/m_kd_mpi.csv`
 
+By default `make_paper_figures.py` plots only the **first 20 rows** from each metrics CSV (`--max_plot_epochs 20`) so longer runs (e.g. 40 epochs KD) do not squash the curve. To use every logged epoch, add **`--max_plot_epochs 0`**.
+
 Full example (merge eval JSON, then figures — **includes the CSVs so the loss plot matches your logs**):
 
 ```bash
