@@ -217,14 +217,14 @@ python train_student.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_perso
 python train_kd.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --mpi_max_train_samples 10000 --amp --num_workers 0 --teacher_ckpt checkpoints\teacher_mpi.pt --checkpoint checkpoints\student_kd_mpi.pt --epochs 20 --metrics_csv runs\m_kd_mpi.csv
 ```
 
-**Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; **one line** per command:
+**Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; **one line** per command. This block uses **teacher** `mobilenet_v3_small` and **student** `gaze_micro` (~100k params):
 
 ```powershell
-python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --teacher_arch mobilenet_v2 --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/teacher_mpi.pt --epochs 20 --metrics_csv runs/m_teacher_mpi.csv
+python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --teacher_arch mobilenet_v3_small --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/teacher_mpi.pt --epochs 20 --metrics_csv runs/m_teacher_mpi.csv
 
-python train_student.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 --metrics_csv runs/m_student_mpi.csv
+python train_student.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --student_arch gaze_micro --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 --metrics_csv runs/m_student_mpi.csv
 
-python train_kd.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --mpi_max_train_samples 10000 --amp --num_workers 0 --teacher_ckpt checkpoints/teacher_mpi.pt --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 --metrics_csv runs/m_kd_mpi.csv
+python train_kd.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --student_arch gaze_micro --mpi_max_train_samples 10000 --amp --num_workers 0 --teacher_ckpt checkpoints/teacher_mpi.pt --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 --metrics_csv runs/m_kd_mpi.csv
 ```
 
 Use **`--num_workers 0`** if the DataLoader workers fail on your OS; reduce **`--batch_size`** if you run out of GPU memory.
@@ -266,14 +266,14 @@ python evaluate.py --model student --checkpoint checkpoints\student_baseline_mpi
 python evaluate.py --model student --checkpoint checkpoints\student_kd_mpi.pt --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --num_workers 0 --export_json runs\eval_kd_mpi.json --save_predictions runs\student_kd_mpi_val.npz
 ```
 
-**Windows (PowerShell)** — **one line** per command:
+**Windows (PowerShell)** — **one line** per command (match **teacher** `mobilenet_v3_small` and **student** `gaze_micro` from training above):
 
 ```powershell
-python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --teacher_arch mobilenet_v2 --num_workers 0 --export_json runs/eval_teacher_mpi.json
+python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --teacher_arch mobilenet_v3_small --num_workers 0 --export_json runs/eval_teacher_mpi.json
 
-python evaluate.py --model student --checkpoint checkpoints/student_baseline_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --num_workers 0 --export_json runs/eval_student_mpi.json
+python evaluate.py --model student --checkpoint checkpoints/student_baseline_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --student_arch gaze_micro --num_workers 0 --export_json runs/eval_student_mpi.json
 
-python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --num_workers 0 --export_json runs/eval_kd_mpi.json --save_predictions runs/student_kd_mpi_val.npz
+python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --student_arch gaze_micro --num_workers 0 --export_json runs/eval_kd_mpi.json --save_predictions runs/student_kd_mpi_val.npz
 ```
 
 ### 5) Paper figures (same scripts as synthetic)
