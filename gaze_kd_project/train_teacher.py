@@ -1,9 +1,10 @@
 """
-Train the ResNet18 teacher with supervised MSE regression on gaze (x, y).
+Train the teacher (ResNet18 or MobileNetV2) with supervised MSE on gaze (x, y).
 
 Run from the ``gaze_kd_project`` directory:
 
     python train_teacher.py --train_csv data/train.csv --val_csv data/val.csv
+    python train_teacher.py --dataset mpiigaze ... --teacher_arch mobilenet_v2
 """
 
 from __future__ import annotations
@@ -16,7 +17,11 @@ from torch.utils.data import DataLoader
 
 from config import default_train_config, ensure_parent_dir
 from datasets.factory import add_gaze_data_args, build_train_val_datasets
-from models.teacher_model import build_teacher
+from models.teacher_model import (
+    TEACHER_ARCH_MOBILENET_V2,
+    TEACHER_ARCH_RESNET18,
+    build_teacher,
+)
 from utils import (
     append_metrics_csv,
     configure_training_runtime,
@@ -31,7 +36,7 @@ from utils import (
 
 def parse_args() -> argparse.Namespace:
     cfg = default_train_config()
-    p = argparse.ArgumentParser(description="Train gaze teacher (ResNet18)")
+    p = argparse.ArgumentParser(description="Train gaze teacher (ResNet18 or MobileNetV2)")
     p.add_argument("--train_csv", type=str, default=cfg.train_csv)
     p.add_argument("--val_csv", type=str, default=cfg.val_csv)
     p.add_argument("--data_root", type=str, default=cfg.data_root)
@@ -44,6 +49,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=cfg.seed)
     p.add_argument("--device", type=str, default="", help="cuda, cpu, or empty for auto")
     p.add_argument("--no_pretrained", action="store_true", help="train from scratch")
+    p.add_argument(
+        "--teacher_arch",
+        type=str,
+        default=TEACHER_ARCH_RESNET18,
+        choices=(TEACHER_ARCH_RESNET18, TEACHER_ARCH_MOBILENET_V2),
+        help="Teacher backbone: resnet18 (default) or mobilenet_v2 (smaller, often better on small data)",
+    )
     p.add_argument(
         "--metrics_csv",
         type=str,
@@ -92,7 +104,8 @@ def main() -> None:
     if use_amp:
         print("AMP (mixed precision) enabled")
 
-    model = build_teacher(pretrained=not args.no_pretrained).to(device)
+    print("Teacher backbone:", args.teacher_arch)
+    model = build_teacher(pretrained=not args.no_pretrained, arch=args.teacher_arch).to(device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 

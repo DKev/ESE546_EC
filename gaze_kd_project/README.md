@@ -1,6 +1,6 @@
 # Lightweight Gaze Estimation + Knowledge Distillation (PyTorch)
 
-Course-style project: **2D gaze regression** from face images using a **ResNet18 teacher**, a **MobileNetV3-Small student**, and **knowledge distillation** (MSE to teacher + MSE to labels). The goal is to compare **accuracy**, **model size**, and **inference speed**, showing that distillation can improve a small model for mobile-style deployment.
+Course-style project: **2D gaze regression** from face images using a **MobileNetV2 teacher**, a **MobileNetV3-Small student**, and **knowledge distillation** (MSE to teacher + MSE to labels). The teacher is deliberately lighter than a classic ResNet so small datasets overfit less; you can still use **ResNet18** via `--teacher_arch resnet18`. The goal is to compare **accuracy**, **model size**, and **inference speed**, showing that distillation can improve the small student for mobile-style deployment.
 
 **中文分步教程（从零到训练 / 评估 / 网页）：** [docs/GETTING_STARTED_ZH.md](docs/GETTING_STARTED_ZH.md)  
 **真实数据从哪下、怎么变成 CSV：** [docs/data_sources.md](docs/data_sources.md) 开头的「真实数据怎么拿」  
@@ -34,8 +34,9 @@ pip install -r requirements.txt
 # 2) 若无合成数据，先生成：
 python scripts/generate_synthetic_gaze_dataset.py --out_root data/synthetic
 
-# 3) 训练（默认 20 epochs；可按需加 --metrics_csv runs/m_teacher.csv 等）：
+# 3) 训练（默认 20 epochs；老师 MobileNetV2，学生 MobileNetV3-Small；可加 --metrics_csv 等）：
 python train_teacher.py \
+  --teacher_arch mobilenet_v2 \
   --train_csv data/synthetic/train.csv \
   --val_csv data/synthetic/val.csv \
   --data_root data/synthetic \
@@ -71,8 +72,8 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 | `datasets/gaze_dataset.py` | CSV-based `Dataset` (image + gaze x, y) |
 | `datasets/mpiigaze_dataset.py` | MPIIGaze `Data/Normalized` `.mat` → tensors |
 | `datasets/factory.py` | `--dataset csv` or `mpiigaze` wiring for train / eval |
-| `models/teacher_model.py` | ResNet18 → 2 outputs |
-| `models/student_model.py` | MobileNetV3-Small → 2 outputs |
+| `models/teacher_model.py` | Teacher: **MobileNetV2** (default in docs) or **ResNet18** → 2 outputs |
+| `models/student_model.py` | Student: **MobileNetV3-Small** → 2 outputs |
 | `train_teacher.py` | Supervised teacher training (MSE) |
 | `train_student.py` | Supervised student baseline (MSE) |
 | `train_kd.py` | Distilled student: `MSE(s,y) + alpha * MSE(s, teacher)` |
@@ -92,9 +93,10 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 
 ```bash
 cd gaze_kd_project
-# 使用你训练好的 student 或 KD student 权重：
+# 使用你训练好的 MobileNetV3-Small student / KD student 权重（或 MobileNetV2 teacher）：
 export GAZE_CKPT=checkpoints/student_kd_best.pt
-export GAZE_MODEL=student   # 或 teacher
+export GAZE_MODEL=student   # 或 teacher（teacher 默认按 ckpt 推断为 mobilenet_v2）
+# 仅当加载旧 ResNet18 老师 ckpt 且无元数据时： export GAZE_TEACHER_ARCH=resnet18
 python -m uvicorn web.server:app --host 127.0.0.1 --port 8765
 ```
 
@@ -134,7 +136,7 @@ python -m uvicorn web.server:app --host 127.0.0.1 --port 8765
 
 ## Real data workflow (MPIIGaze)
 
-This section is the **end-to-end checklist** for training and reporting on **MPIIGaze** with this repo. Labels come from `Data/Normalized/pXX/dayYY.mat` (unit gaze vectors → yaw/pitch scaled to about `[-1, 1]`, same scale as the synthetic toy data). For folder layout and license links, see [docs/data_sources.md](docs/data_sources.md) and [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md).
+This section is the **end-to-end checklist** for training and reporting on **MPIIGaze** with this repo. **Teacher = MobileNetV2**, **student = MobileNetV3-Small** (same as the synthetic quickstart). Labels come from `Data/Normalized/pXX/dayYY.mat` (unit gaze vectors → yaw/pitch scaled to about `[-1, 1]`, same scale as the synthetic toy data). For folder layout and license links, see [docs/data_sources.md](docs/data_sources.md) and [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md).
 
 ### 1) Download, layout, and gitignore
 
@@ -181,12 +183,13 @@ $env:MPI_ROOT="..\MPIIGaze"; $env:MPI_VAL="14,15"
 
 Examples below use **`--mpi_max_train_samples 10000`** so each epoch stays fast; drop that flag to train on the full MPII train split. Validation on `p14`/`p15` stays complete unless you add **`--mpi_max_val_samples`**.
 
-Also included: **`--amp`** (CUDA mixed precision; omit on CPU-only), **`--num_workers 0`** (recommended on **Windows** to avoid duplicating `.mat` preload RAM; on Linux you can try **`--num_workers 4`**). Remove **`--amp`** if you do not have a GPU.
+Also included: **`--teacher_arch mobilenet_v2`** on **`train_teacher.py`** (documented default teacher); **`train_student.py`** is always **MobileNetV3-Small**. Plus **`--amp`** (CUDA mixed precision; omit on CPU-only), **`--num_workers 0`** (recommended on **Windows** to avoid duplicating `.mat` preload RAM; on Linux you can try **`--num_workers 4`**). Remove **`--amp`** if you do not have a GPU.
 
 **macOS / Linux**
 
 ```bash
 python train_teacher.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --teacher_arch mobilenet_v2 \
   --mpi_max_train_samples 10000 --amp --num_workers 4 \
   --checkpoint checkpoints/teacher_mpi.pt --epochs 20 \
   --metrics_csv runs/m_teacher_mpi.csv
@@ -206,7 +209,7 @@ python train_kd.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "
 **Windows (Command Prompt)** — use `%MPI_ROOT%` / `%MPI_VAL%` (set them in §2); each command is **one line**:
 
 ```bat
-python train_teacher.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints\teacher_mpi.pt --epochs 20 --metrics_csv runs\m_teacher_mpi.csv
+python train_teacher.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --teacher_arch mobilenet_v2 --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints\teacher_mpi.pt --epochs 20 --metrics_csv runs\m_teacher_mpi.csv
 
 python train_student.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints\student_baseline_mpi.pt --epochs 20 --metrics_csv runs\m_student_mpi.csv
 
@@ -216,7 +219,7 @@ python train_kd.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %M
 **Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; **one line** per command:
 
 ```powershell
-python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/teacher_mpi.pt --epochs 20 --metrics_csv runs/m_teacher_mpi.csv
+python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --teacher_arch mobilenet_v2 --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/teacher_mpi.pt --epochs 20 --metrics_csv runs/m_teacher_mpi.csv
 
 python train_student.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 --metrics_csv runs/m_student_mpi.csv
 
@@ -239,6 +242,7 @@ Do **not** pass **`--csv`** when using **`--dataset mpiigaze`**. Use the **same*
 ```bash
 python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt \
   --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --teacher_arch mobilenet_v2 \
   --num_workers 4 --export_json runs/eval_teacher_mpi.json
 
 python evaluate.py --model student --checkpoint checkpoints/student_baseline_mpi.pt \
@@ -254,7 +258,7 @@ python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt \
 **Windows (Command Prompt)** — **one line** per command:
 
 ```bat
-python evaluate.py --model teacher --checkpoint checkpoints\teacher_mpi.pt --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --num_workers 0 --export_json runs\eval_teacher_mpi.json
+python evaluate.py --model teacher --checkpoint checkpoints\teacher_mpi.pt --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --teacher_arch mobilenet_v2 --num_workers 0 --export_json runs\eval_teacher_mpi.json
 
 python evaluate.py --model student --checkpoint checkpoints\student_baseline_mpi.pt --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --num_workers 0 --export_json runs\eval_student_mpi.json
 
@@ -264,7 +268,7 @@ python evaluate.py --model student --checkpoint checkpoints\student_kd_mpi.pt --
 **Windows (PowerShell)** — **one line** per command:
 
 ```powershell
-python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --num_workers 0 --export_json runs/eval_teacher_mpi.json
+python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --teacher_arch mobilenet_v2 --num_workers 0 --export_json runs/eval_teacher_mpi.json
 
 python evaluate.py --model student --checkpoint checkpoints/student_baseline_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --num_workers 0 --export_json runs/eval_student_mpi.json
 
@@ -332,7 +336,7 @@ The course template you have locally can be compared with [paper/report.tex](pap
    **Synthetic (CSV) example:**
 
    ```bash
-   python evaluate.py --model teacher --checkpoint checkpoints/teacher_best.pt --csv data/synthetic/val.csv --data_root data/synthetic --export_json runs/eval_teacher.json
+   python evaluate.py --model teacher --checkpoint checkpoints/teacher_best.pt --teacher_arch mobilenet_v2 --csv data/synthetic/val.csv --data_root data/synthetic --export_json runs/eval_teacher.json
    python evaluate.py --model student --checkpoint checkpoints/student_baseline_best.pt --csv data/synthetic/val.csv --data_root data/synthetic --export_json runs/eval_student.json
    python evaluate.py --model student --checkpoint checkpoints/student_kd_best.pt --csv data/synthetic/val.csv --data_root data/synthetic --export_json runs/eval_kd.json
    ```
@@ -395,17 +399,22 @@ Place images accordingly (e.g. under `data/samples/` if you use `data/` as `--da
 
 Run all commands from `gaze_kd_project/` unless you adjust `PYTHONPATH`.
 
-### 1) Teacher (ResNet18)
+### 1) Teacher (MobileNetV2, default in this README)
+
+The documented pipeline uses **MobileNetV2** as the teacher (~2M params): strong enough to supervise the student but lighter than ResNet18 on small gaze splits. **`--teacher_arch`** is stored in the checkpoint; **`train_kd.py`** / **`evaluate.py`** read it unless you override with **`--teacher_arch`**.
 
 ```bash
 python train_teacher.py \
+  --teacher_arch mobilenet_v2 \
   --train_csv data/train.csv \
   --val_csv data/val.csv \
   --data_root data \
   --checkpoint checkpoints/teacher_best.pt
 ```
 
-### 2) Student baseline (no KD)
+**Optional heavier teacher:** **`--teacher_arch resnet18`** (~11M params).
+
+### 2) Student baseline (MobileNetV3-Small, no KD)
 
 ```bash
 python train_student.py \
@@ -415,9 +424,9 @@ python train_student.py \
   --checkpoint checkpoints/student_baseline_best.pt
 ```
 
-### 3) Student + knowledge distillation
+### 3) Student (MobileNetV3-Small) + knowledge distillation
 
-Requires a trained teacher checkpoint.
+Requires a **MobileNetV2** teacher checkpoint (paths above). Student remains **MobileNetV3-Small**.
 
 ```bash
 python train_kd.py \
@@ -429,20 +438,22 @@ python train_kd.py \
   --alpha 0.5
 ```
 
-**Loss:** `total = MSE(student, ground_truth) + alpha * MSE(student, teacher_prediction)`. The teacher is frozen and in eval mode.
+**Loss:** `total = MSE(student, ground_truth) + alpha * MSE(student, teacher_prediction)`. The **MobileNetV2** teacher is frozen and in eval mode.
 
 ## Evaluation
 
 Use the same `--data_root` and `--image_size` as in training when comparing fairly.
 
-**Teacher:**
+**Teacher (MobileNetV2):**
 
 ```bash
 python evaluate.py --model teacher --checkpoint checkpoints/teacher_best.pt \
+  --teacher_arch mobilenet_v2 \
   --csv data/val.csv --data_root data
 ```
+(Omit **`--teacher_arch`** if the checkpoint already stores it in `extra.args`.)
 
-**Student (baseline or KD checkpoint):**
+**Student (MobileNetV3-Small, baseline or KD checkpoint):**
 
 ```bash
 python evaluate.py --model student --checkpoint checkpoints/student_baseline_best.pt \
@@ -481,11 +492,11 @@ Override with CLI flags on any script.
 
 | Model | MSE | MAE | Mean L2 | Params | CKPT (MB) | ms/img | FPS |
 |-------|-----|-----|---------|--------|-----------|--------|-----|
-| Teacher (ResNet18) | | | | | | | |
-| Student baseline | | | | | | | |
-| Student + KD | | | | | | | |
+| Teacher (MobileNetV2) | | | | | | | |
+| Student baseline (MobileNetV3-Small) | | | | | | | |
+| Student + KD (MobileNetV3-Small) | | | | | | | |
 
-You typically want: **KD student better than baseline** on error metrics, while **student stays smaller/faster** than the teacher.
+You typically want: **KD student better than baseline** on error metrics. Here the student (**MobileNetV3-Small**) is usually **smaller / faster** than the **MobileNetV2** teacher as well.
 
 ## Future improvements
 

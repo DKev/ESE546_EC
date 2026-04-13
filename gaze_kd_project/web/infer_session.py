@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import io
 import os
-from typing import Literal
+from typing import Literal, Optional
 
 import torch
 from PIL import Image
 from torchvision import transforms
 
 from models.student_model import build_student
-from models.teacher_model import build_teacher
+from models.teacher_model import build_teacher, resolve_teacher_arch
 from utils import configure_training_runtime, load_checkpoint
 
 ModelName = Literal["student", "teacher"]
@@ -42,7 +42,8 @@ class GazeInferenceSession:
         checkpoint_path: str,
         model_name: ModelName = "student",
         image_size: int = 224,
-        device: str | None = None,
+        device: Optional[str] = None,
+        teacher_arch: str = "",
     ) -> None:
         if not os.path.isfile(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -56,7 +57,8 @@ class GazeInferenceSession:
         configure_training_runtime(self.device)
 
         if model_name == "teacher":
-            self.model = build_teacher(pretrained=False).to(self.device)
+            arch = resolve_teacher_arch(teacher_arch, checkpoint_path)
+            self.model = build_teacher(pretrained=False, arch=arch).to(self.device)
         else:
             self.model = build_student(pretrained=False).to(self.device)
 

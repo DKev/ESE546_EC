@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 from config import default_train_config, ensure_parent_dir
 from datasets.factory import add_gaze_data_args, build_train_val_datasets
 from models.student_model import build_student
-from models.teacher_model import build_teacher
+from models.teacher_model import build_teacher, resolve_teacher_arch
 from utils import (
     append_metrics_csv,
     configure_training_runtime,
@@ -53,6 +53,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=cfg.seed)
     p.add_argument("--device", type=str, default="", help="cuda, cpu, or empty for auto")
     p.add_argument("--no_pretrained_student", action="store_true", help="student ImageNet init off")
+    p.add_argument(
+        "--teacher_arch",
+        type=str,
+        default="",
+        help="Teacher backbone: resnet18 | mobilenet_v2; empty = read from teacher ckpt extra.args (else resnet18)",
+    )
     p.add_argument(
         "--metrics_csv",
         type=str,
@@ -101,7 +107,9 @@ def main() -> None:
     if use_amp:
         print("AMP (mixed precision) enabled")
 
-    teacher = build_teacher(pretrained=True).to(device)
+    t_arch = resolve_teacher_arch(args.teacher_arch, args.teacher_ckpt)
+    print("Teacher backbone:", t_arch)
+    teacher = build_teacher(pretrained=False, arch=t_arch).to(device)
     load_checkpoint(args.teacher_ckpt, teacher, optimizer=None, device=device)
     for p in teacher.parameters():
         p.requires_grad = False

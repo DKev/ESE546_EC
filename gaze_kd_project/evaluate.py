@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 from config import default_train_config
 from datasets.factory import add_gaze_data_args, build_eval_dataset
 from models.student_model import build_student
-from models.teacher_model import build_teacher
+from models.teacher_model import build_teacher, resolve_teacher_arch
 from utils import (
     collect_predictions,
     configure_training_runtime,
@@ -51,6 +51,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--latency_iters", type=int, default=100)
     p.add_argument("--no_pretrained", action="store_true", help="build backbone without ImageNet weights")
     p.add_argument(
+        "--teacher_arch",
+        type=str,
+        default="",
+        help="When --model teacher: resnet18 | mobilenet_v2; empty = read from checkpoint extra.args",
+    )
+    p.add_argument(
         "--export_json",
         type=str,
         default="",
@@ -79,8 +85,11 @@ def main() -> None:
     print("Device:", device)
     configure_training_runtime(device)
 
+    teacher_arch_used = ""
     if args.model == "teacher":
-        model = build_teacher(pretrained=not args.no_pretrained).to(device)
+        teacher_arch_used = resolve_teacher_arch(args.teacher_arch, args.checkpoint)
+        print("Teacher backbone:", teacher_arch_used)
+        model = build_teacher(pretrained=not args.no_pretrained, arch=teacher_arch_used).to(device)
     else:
         model = build_student(pretrained=not args.no_pretrained).to(device)
 
@@ -122,6 +131,7 @@ def main() -> None:
     if args.export_json:
         payload = {
             "model": args.model,
+            "teacher_arch": teacher_arch_used if args.model == "teacher" else "",
             "checkpoint": os.path.abspath(args.checkpoint),
             "dataset": args.dataset,
             "csv": os.path.abspath(args.csv) if args.csv else "",

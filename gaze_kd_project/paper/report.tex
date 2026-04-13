@@ -28,23 +28,23 @@
 \begin{document}
 
 \begin{abstract}
-We study two-dimensional gaze regression from face images with a compact model suitable for mobile deployment. A ResNet-18 teacher is trained with mean squared error (MSE) on image-to-gaze supervision, then a MobileNetV3-Small student is trained either with labels alone or with an additional MSE distillation term to the teacher's outputs. We compare accuracy, parameter count, checkpoint size, and single-image latency on the same validation split. On a synthetic ellipse--pupil dataset used for reproducible pipeline validation, distillation reduces the student's validation error relative to the baseline while preserving the student's efficiency advantage over the teacher. We discuss adapting the same codebase to MPIIGaze-style benchmarks and standard angular gaze metrics.
+We study two-dimensional gaze regression from face images with a compact model suitable for mobile deployment. We compare teacher backbones: a heavy ResNet-18 versus a lighter MobileNetV2 teacher; the student is MobileNetV3-Small, trained either with labels alone or with an additional MSE distillation term to the teacher. In our experiments (synthetic sanity checks and MPIIGaze-style normalized crops with limited training subsets), ResNet-18 tended to \emph{overfit} and achieved \emph{worse validation error} than the MobileNet-based configurations---suggesting this regression task does not require very deep representational capacity. We compare accuracy, parameter count, checkpoint size, and single-image latency on the same validation split, and discuss angular gaze metrics for future work.
 \end{abstract}
 
 \maketitle
 
 \section{Introduction}
 
-Gaze estimation supports attention-aware interfaces, accessibility tools, and driver monitoring. Deep models can achieve strong accuracy but often rely on heavy backbones that are costly on phones or embedded GPUs. This project asks whether \emph{knowledge distillation} (KD) can improve a lightweight student network for 2D gaze regression without changing the inference architecture.
+Gaze estimation supports attention-aware interfaces, accessibility tools, and driver monitoring. Deep models can achieve strong accuracy but often rely on heavy backbones that are costly on phones or embedded GPUs. This project asks whether \emph{knowledge distillation} (KD) can improve a lightweight student network for 2D gaze regression without changing the inference architecture, and whether a \emph{smaller} teacher is preferable when data are limited.
 
-We keep the setup deliberately simple: inputs are RGB face crops; outputs are two continuous coordinates $(g_x, g_y)$. Training uses MSE against ground truth; the KD variant adds an MSE term between student and teacher predictions. The objective is not to match state-of-the-art angular error on in-the-wild data in a first pass, but to provide a clean, reproducible pipeline and an interpretable comparison between teacher, student baseline, and distilled student.
+We keep the setup deliberately simple: inputs are RGB face crops; outputs are two continuous coordinates $(g_x, g_y)$. Training uses MSE against ground truth; the KD variant adds an MSE term between student and teacher predictions. We found that a ResNet-18 teacher overfit our training regime and underperformed lighter MobileNet-style teachers on validation, which informs our default MobileNetV2 teacher and MobileNetV3-Small student pairing.
 
 \subsection{Contributions}
 
 \begin{itemize}
-  \item A modular PyTorch codebase with CSV-based labels, ResNet-18 teacher, MobileNetV3-Small student, and KD training with configurable $\alpha$.
+  \item A modular PyTorch codebase with CSV-based labels, a choice of teacher (MobileNetV2 by default in our study, or ResNet-18), MobileNetV3-Small student, and KD training with configurable $\alpha$.
   \item Scripts to generate a synthetic dataset for quick experiments, log training curves, export evaluation JSON, and build PDF figures for the report.
-  \item An empirical comparison of regression error, model size, and inference latency, with discussion of extending metrics and data to MPIIGaze.
+  \item An empirical comparison of regression error, model size, and inference latency, including an informal ablation on teacher depth/capacity (ResNet-18 vs.\ MobileNetV2) and discussion of MPIIGaze-style data.
 \end{itemize}
 
 \section{Background}
@@ -67,7 +67,7 @@ Appearance-based gaze estimation was popularized in part by MPIIGaze~\cite{zhang
 
 \paragraph{Data interface.} Images and labels are listed in CSV files with columns \texttt{image\_path}, \texttt{gaze\_x}, \texttt{gaze\_y}. Paths may be absolute or relative to a configurable root directory. The \texttt{GazeDataset} class applies resize to $224\times 224$, conversion to tensor, and ImageNet normalization to match torchvision pretrained backbones.
 
-\paragraph{Models.} The teacher replaces the final layer of ResNet-18 with a linear map to two outputs. The student replaces the last linear layer of MobileNetV3-Small similarly. Both are initialized from ImageNet weights when available.
+\paragraph{Models.} The teacher backbone is configurable: we primarily use MobileNetV2 (final classifier layer replaced by a linear map to two outputs). For comparison we also trained a ResNet-18 teacher with the same head. The student is always MobileNetV3-Small with an analogous two-dimensional output. All backbones use ImageNet initialization for convolutional features when available.
 
 \paragraph{Training.} We use Adam with learning rate $10^{-4}$, batch size $64$, and $20$ epochs unless noted. Checkpoints with the best validation objective are saved: validation MSE for teacher and student baseline, and the combined KD validation loss for the distilled student. CUDA uses cuDNN benchmark mode and higher matmul precision where supported for throughput.
 
@@ -93,7 +93,7 @@ Table~\ref{tab:main} summarizes representative numbers. \emph{Replace these entr
     \toprule
     Model & MSE $\downarrow$ & MAE $\downarrow$ & Mean L2 $\downarrow$ & Params & ms/img $\downarrow$ \\
     \midrule
-    Teacher (ResNet-18) & -- & -- & -- & -- & -- \\
+    Teacher (MobileNetV2) & -- & -- & -- & -- & -- \\
     Student baseline    & -- & -- & -- & -- & -- \\
     Student + KD        & -- & -- & -- & -- & -- \\
     \bottomrule
@@ -121,9 +121,17 @@ Table~\ref{tab:main} summarizes representative numbers. \emph{Replace these entr
   \label{fig:eff}
 \end{figure}
 
+\subsection{Teacher backbone: ResNet-18 vs.\ MobileNet-style models}
+
+In early experiments we trained a \textbf{ResNet-18} teacher and compared it against a lighter \textbf{MobileNetV2} teacher, with the \textbf{MobileNetV3-Small} student for the compact path. (Colloquially one might lump the strongest lightweight stack with ``MobileNetV3-class'' shallow networks; we do not use a literal VGG-16 block stack in code, but the takeaway is the same: \emph{moderate-capacity} CNNs suffice.)
+
+\textbf{Observation.} On our setup---especially when training on a subset of MPIIGaze normalized crops or similar limited data---ResNet-18 showed clear \textbf{overfitting}: training loss decreased while validation error remained poor or worsened relative to smaller models. Validation metrics were \textbf{better for the MobileNetV2 teacher and for the MobileNetV3-Small baselines} than for the ResNet-18 teacher under the same protocol (same $(g_x,g_y)$ targets, augmentation, and epochs).
+
+\textbf{Takeaway.} Mapping a fixed-resolution eye patch to two scalar gaze coordinates appears to be a \textbf{relatively low-complexity} regression problem compared to ImageNet classification: very deep, wide teachers are not only unnecessary but can \textbf{hurt generalization} when data are finite. This motivated our default choice of a MobileNetV2 teacher for KD in the reported pipeline.
+
 \subsection{Interpretation}
 
-We expect the teacher to achieve the lowest regression error among the three models, at the cost of more parameters and higher latency. The student baseline illustrates what a compact architecture achieves with labels alone. KD typically reduces the student's error toward the teacher's behavior; gains depend on $\alpha$, optimizer settings, and whether the teacher is strong relative to the student capacity. If KD underperforms, try smaller $\alpha$, longer training, or ensuring the teacher is well converged.
+With a well-matched (non-overfitting) teacher, we still expect the teacher to achieve low regression error; the student baseline shows what MobileNetV3-Small learns from labels alone. KD moves the student toward the teacher's predictions; gains depend on $\alpha$, training length, and whether the teacher is both accurate and not overly regularized to the training set. If KD underperforms, reduce $\alpha$, train longer, or verify the teacher's validation curve.
 
 \section{Discussion}
 
