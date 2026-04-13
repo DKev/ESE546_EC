@@ -26,6 +26,8 @@ from models.teacher_model import build_teacher
 from utils import (
     append_metrics_csv,
     configure_training_runtime,
+    dataloader_common_kwargs,
+    grad_scaler_if_amp,
     load_checkpoint,
     save_checkpoint,
     set_seed,
@@ -57,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="optional path to append per-epoch KD metrics",
     )
+    p.add_argument(
+        "--amp",
+        action="store_true",
+        help="CUDA automatic mixed precision (faster on GPU; no effect on CPU)",
+    )
     add_gaze_data_args(p)
     return p.parse_args()
 
@@ -75,20 +82,24 @@ def main() -> None:
     train_ds, val_ds = build_train_val_datasets(args)
     print(f"Train samples: {len(train_ds)}  Val samples: {len(val_ds)}")
 
+    dl_kw = dataloader_common_kwargs(num_workers=args.num_workers, pin_memory=device.type == "cuda")
     train_loader = DataLoader(
         train_ds,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
+        **dl_kw,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
+        **dl_kw,
     )
+
+    use_amp = bool(args.amp and device.type == "cuda")
+    scaler = grad_scaler_if_amp(use_amp=use_amp, device=device)
+    if use_amp:
+        print("AMP (mixed precision) enabled")
 
     teacher = build_teacher(pretrained=True).to(device)
     load_checkpoint(args.teacher_ckpt, teacher, optimizer=None, device=device)
@@ -115,10 +126,19 @@ def main() -> None:
 
     for epoch in range(1, args.epochs + 1):
         tr_total, tr_gt, tr_kd = train_kd_one_epoch(
-            teacher, student, train_loader, mse, optimizer, device, args.alpha, desc=f"e{epoch} kd"
+            teacher,
+            student,
+            train_loader,
+            mse,
+            optimizer,
+            device,
+            args.alpha,
+            desc=f"e{epoch} kd",
+            use_amp=use_amp,
+            scaler=scaler,
         )
         va_total, va_gt, va_kd = validate_kd_epoch(
-            teacher, student, val_loader, mse, device, args.alpha
+            teacher, student, val_loader, mse, device, args.alpha, use_amp=use_amp
         )
         print(
             f"Epoch {epoch}/{args.epochs}  "

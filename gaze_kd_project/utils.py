@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import random
 import time
+from contextlib import nullcontext
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,32 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+
+def dataloader_common_kwargs(*, num_workers: int, pin_memory: bool) -> dict[str, Any]:
+    """``persistent_workers`` avoids respawning workers each epoch when ``num_workers > 0``."""
+    d: dict[str, Any] = {"num_workers": num_workers, "pin_memory": bool(pin_memory)}
+    if num_workers > 0:
+        d["persistent_workers"] = True
+    return d
+
+
+def grad_scaler_if_amp(*, use_amp: bool, device: torch.device) -> Any | None:
+    if not use_amp or device.type != "cuda":
+        return None
+    try:
+        return torch.amp.GradScaler("cuda")
+    except (TypeError, AttributeError):
+        return torch.cuda.amp.GradScaler(enabled=True)
+
+
+def autocast_if_amp(*, use_amp: bool, device: torch.device):
+    if not use_amp or device.type != "cuda":
+        return nullcontext()
+    try:
+        return torch.amp.autocast("cuda")
+    except (TypeError, AttributeError):
+        return torch.cuda.amp.autocast()
 
 
 def set_seed(seed: int) -> None:
@@ -105,6 +132,9 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     desc: str = "train",
+    *,
+    use_amp: bool = False,
+    scaler: Any | None = None,
 ) -> float:
     """One supervised epoch; returns average MSE loss."""
     model.train()
@@ -113,10 +143,16 @@ def train_one_epoch(
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
         optimizer.zero_grad(set_to_none=True)
-        pred = model(x)
-        loss = criterion(pred, y)
-        loss.backward()
-        optimizer.step()
+        with autocast_if_amp(use_amp=use_amp, device=device):
+            pred = model(x)
+            loss = criterion(pred, y)
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
         bs = x.size(0)
         total += loss.item() * bs
         n += bs
@@ -129,6 +165,8 @@ def validate_epoch(
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    *,
+    use_amp: bool = False,
 ) -> float:
     """Validation average MSE loss."""
     model.eval()
@@ -136,8 +174,9 @@ def validate_epoch(
     for x, y in tqdm(loader, desc="val", leave=False):
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
-        pred = model(x)
-        loss = criterion(pred, y)
+        with autocast_if_amp(use_amp=use_amp, device=device):
+            pred = model(x)
+            loss = criterion(pred, y)
         bs = x.size(0)
         total += loss.item() * bs
         n += bs
@@ -153,6 +192,9 @@ def train_kd_one_epoch(
     device: torch.device,
     alpha: float,
     desc: str = "train_kd",
+    *,
+    use_amp: bool = False,
+    scaler: Any | None = None,
 ) -> tuple[float, float, float]:
     """
     One KD epoch. Returns (total_loss_avg, loss_gt_avg, loss_kd_avg).
@@ -166,14 +208,20 @@ def train_kd_one_epoch(
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
         optimizer.zero_grad(set_to_none=True)
-        with torch.no_grad():
-            t_pred = teacher(x)
-        s_pred = student(x)
-        loss_gt = mse(s_pred, y)
-        loss_kd = mse(s_pred, t_pred)
-        loss = loss_gt + alpha * loss_kd
-        loss.backward()
-        optimizer.step()
+        with autocast_if_amp(use_amp=use_amp, device=device):
+            with torch.no_grad():
+                t_pred = teacher(x)
+            s_pred = student(x)
+            loss_gt = mse(s_pred, y)
+            loss_kd = mse(s_pred, t_pred)
+            loss = loss_gt + alpha * loss_kd
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
         bs = x.size(0)
         sum_total += loss.item() * bs
         sum_gt += loss_gt.item() * bs
@@ -191,6 +239,8 @@ def validate_kd_epoch(
     mse: nn.Module,
     device: torch.device,
     alpha: float,
+    *,
+    use_amp: bool = False,
 ) -> tuple[float, float, float]:
     """KD validation: same losses as training. Returns (total, gt, kd) averages."""
     teacher.eval()
@@ -200,11 +250,12 @@ def validate_kd_epoch(
     for x, y in tqdm(loader, desc="val_kd", leave=False):
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
-        t_pred = teacher(x)
-        s_pred = student(x)
-        loss_gt = mse(s_pred, y)
-        loss_kd = mse(s_pred, t_pred)
-        loss = loss_gt + alpha * loss_kd
+        with autocast_if_amp(use_amp=use_amp, device=device):
+            t_pred = teacher(x)
+            s_pred = student(x)
+            loss_gt = mse(s_pred, y)
+            loss_kd = mse(s_pred, t_pred)
+            loss = loss_gt + alpha * loss_kd
         bs = x.size(0)
         sum_total += loss.item() * bs
         sum_gt += loss_gt.item() * bs

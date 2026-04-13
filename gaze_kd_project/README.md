@@ -168,82 +168,69 @@ export MPI_VAL=14,15
 **Windows (Command Prompt)**
 
 ```bat
-set MPI_ROOT=..\MPIIGaze
-set MPI_VAL=14,15
+set MPI_ROOT=..\MPIIGaze && set MPI_VAL=14,15
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-$env:MPI_ROOT = "..\MPIIGaze"
-$env:MPI_VAL = "14,15"
+$env:MPI_ROOT="..\MPIIGaze"; $env:MPI_VAL="14,15"
 ```
 
 ### 3) Training (teacher, student, KD)
 
 Examples below use **`--mpi_max_train_samples 10000`** so each epoch stays fast; drop that flag to train on the full MPII train split. Validation on `p14`/`p15` stays complete unless you add **`--mpi_max_val_samples`**.
 
+Also included: **`--amp`** (CUDA mixed precision; omit on CPU-only), **`--num_workers 0`** (recommended on **Windows** to avoid duplicating `.mat` preload RAM; on Linux you can try **`--num_workers 4`**). Remove **`--amp`** if you do not have a GPU.
+
 **macOS / Linux**
 
 ```bash
 python train_teacher.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
-  --mpi_max_train_samples 10000 \
+  --mpi_max_train_samples 10000 --amp --num_workers 4 \
   --checkpoint checkpoints/teacher_mpi.pt --epochs 20 \
   --metrics_csv runs/m_teacher_mpi.csv
 
 python train_student.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
-  --mpi_max_train_samples 10000 \
+  --mpi_max_train_samples 10000 --amp --num_workers 4 \
   --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 \
   --metrics_csv runs/m_student_mpi.csv
 
 python train_kd.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
-  --mpi_max_train_samples 10000 \
+  --mpi_max_train_samples 10000 --amp --num_workers 4 \
   --teacher_ckpt checkpoints/teacher_mpi.pt \
   --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 \
   --metrics_csv runs/m_kd_mpi.csv
 ```
 
-**Windows (Command Prompt)** — use `%MPI_ROOT%` / `%MPI_VAL%`; line continuation is `^`
+**Windows (Command Prompt)** — use `%MPI_ROOT%` / `%MPI_VAL%` (set them in §2); each command is **one line**:
 
 ```bat
-python train_teacher.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% ^
-  --mpi_max_train_samples 10000 ^
-  --checkpoint checkpoints\teacher_mpi.pt --epochs 20 ^
-  --metrics_csv runs\m_teacher_mpi.csv
+python train_teacher.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints\teacher_mpi.pt --epochs 20 --metrics_csv runs\m_teacher_mpi.csv
 
-python train_student.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% ^
-  --mpi_max_train_samples 10000 ^
-  --checkpoint checkpoints\student_baseline_mpi.pt --epochs 20 ^
-  --metrics_csv runs\m_student_mpi.csv
+python train_student.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints\student_baseline_mpi.pt --epochs 20 --metrics_csv runs\m_student_mpi.csv
 
-python train_kd.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% ^
-  --mpi_max_train_samples 10000 ^
-  --teacher_ckpt checkpoints\teacher_mpi.pt ^
-  --checkpoint checkpoints\student_kd_mpi.pt --epochs 20 ^
-  --metrics_csv runs\m_kd_mpi.csv
+python train_kd.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --mpi_max_train_samples 10000 --amp --num_workers 0 --teacher_ckpt checkpoints\teacher_mpi.pt --checkpoint checkpoints\student_kd_mpi.pt --epochs 20 --metrics_csv runs\m_kd_mpi.csv
 ```
 
-**Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; backtick `` ` `` continues a line
+**Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; **one line** per command:
 
 ```powershell
-python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL `
-  --mpi_max_train_samples 10000 `
-  --checkpoint checkpoints/teacher_mpi.pt --epochs 20 `
-  --metrics_csv runs/m_teacher_mpi.csv
+python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/teacher_mpi.pt --epochs 20 --metrics_csv runs/m_teacher_mpi.csv
 
-python train_student.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL `
-  --mpi_max_train_samples 10000 `
-  --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 `
-  --metrics_csv runs/m_student_mpi.csv
+python train_student.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --mpi_max_train_samples 10000 --amp --num_workers 0 --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 --metrics_csv runs/m_student_mpi.csv
 
-python train_kd.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL `
-  --mpi_max_train_samples 10000 `
-  --teacher_ckpt checkpoints/teacher_mpi.pt `
-  --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 `
-  --metrics_csv runs/m_kd_mpi.csv
+python train_kd.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --mpi_max_train_samples 10000 --amp --num_workers 0 --teacher_ckpt checkpoints/teacher_mpi.pt --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 --metrics_csv runs/m_kd_mpi.csv
 ```
 
 Use **`--num_workers 0`** if the DataLoader workers fail on your OS; reduce **`--batch_size`** if you run out of GPU memory.
+
+**Speed (MPIIGaze + training):**
+
+- **`.mat` preload:** If a split touches at most **`--mpi_preload_max_unique`** distinct `dayYY.mat` files (default **512**), they are loaded into RAM once per process (log: `MPIIGaze [train]: preloaded …`). This avoids repeated `loadmat` on every sample when batches jump across files. Disable with **`--mpi_no_preload`**, or set **`--mpi_preload_max_unique 0`** to force lazy IO. If the unique count exceeds the limit, the code falls back to lazy load and prints a hint.
+- **GPU:** Add **`--amp`** to any of `train_teacher.py` / `train_student.py` / `train_kd.py` for CUDA **mixed precision** (often noticeably faster on modern GPUs).
+- **DataLoader:** When **`num_workers > 0`**, workers stay alive across epochs (**`persistent_workers`**). Try **`--num_workers 4`** (or higher if CPU allows). On **Windows**, spawn + multiple workers can **duplicate** a large RAM preload—prefer **`--num_workers 0`** with preload, or **`--mpi_no_preload`** with more workers.
+- **Larger batches / smaller input:** Increase **`--batch_size`** if VRAM allows; lower **`--image_size`** (e.g. 128) speeds up each step but changes the setup—keep it consistent for eval.
 
 ### 4) Evaluation
 
@@ -252,16 +239,36 @@ Do **not** pass **`--csv`** when using **`--dataset mpiigaze`**. Use the **same*
 ```bash
 python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt \
   --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
-  --export_json runs/eval_teacher_mpi.json
+  --num_workers 4 --export_json runs/eval_teacher_mpi.json
 
 python evaluate.py --model student --checkpoint checkpoints/student_baseline_mpi.pt \
   --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
-  --export_json runs/eval_student_mpi.json
+  --num_workers 4 --export_json runs/eval_student_mpi.json
 
 python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt \
   --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
-  --export_json runs/eval_kd_mpi.json \
+  --num_workers 4 --export_json runs/eval_kd_mpi.json \
   --save_predictions runs/student_kd_mpi_val.npz
+```
+
+**Windows (Command Prompt)** — **one line** per command:
+
+```bat
+python evaluate.py --model teacher --checkpoint checkpoints\teacher_mpi.pt --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --num_workers 0 --export_json runs\eval_teacher_mpi.json
+
+python evaluate.py --model student --checkpoint checkpoints\student_baseline_mpi.pt --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --num_workers 0 --export_json runs\eval_student_mpi.json
+
+python evaluate.py --model student --checkpoint checkpoints\student_kd_mpi.pt --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% --num_workers 0 --export_json runs\eval_kd_mpi.json --save_predictions runs\student_kd_mpi_val.npz
+```
+
+**Windows (PowerShell)** — **one line** per command:
+
+```powershell
+python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --num_workers 0 --export_json runs/eval_teacher_mpi.json
+
+python evaluate.py --model student --checkpoint checkpoints/student_baseline_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --num_workers 0 --export_json runs/eval_student_mpi.json
+
+python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL --num_workers 0 --export_json runs/eval_kd_mpi.json --save_predictions runs/student_kd_mpi_val.npz
 ```
 
 ### 5) Paper figures (same scripts as synthetic)
@@ -280,6 +287,22 @@ python scripts/make_paper_figures.py --out_dir paper/figures \
   --metrics_student runs/m_student_mpi.csv \
   --metrics_kd runs/m_kd_mpi.csv \
   --scatter_npz runs/student_kd_mpi_val.npz
+```
+
+**Windows (Command Prompt)** — **one line** per command (`runs\` paths; forward slashes also work in Python):
+
+```bat
+python scripts\build_eval_summary.py --out runs\summary_mpi.json --teacher runs\eval_teacher_mpi.json --student_baseline runs\eval_student_mpi.json --student_kd runs\eval_kd_mpi.json
+
+python scripts\make_paper_figures.py --out_dir paper\figures --summary runs\summary_mpi.json --metrics_teacher runs\m_teacher_mpi.csv --metrics_student runs\m_student_mpi.csv --metrics_kd runs\m_kd_mpi.csv --scatter_npz runs\student_kd_mpi_val.npz
+```
+
+**Windows (PowerShell)** — **one line** per command:
+
+```powershell
+python scripts/build_eval_summary.py --out runs/summary_mpi.json --teacher runs/eval_teacher_mpi.json --student_baseline runs/eval_student_mpi.json --student_kd runs/eval_kd_mpi.json
+
+python scripts/make_paper_figures.py --out_dir paper/figures --summary runs/summary_mpi.json --metrics_teacher runs/m_teacher_mpi.csv --metrics_student runs/m_student_mpi.csv --metrics_kd runs/m_kd_mpi.csv --scatter_npz runs/student_kd_mpi_val.npz
 ```
 
 If you skip **`--save_predictions`**, omit **`--scatter_npz ...`** from the last command. Placeholder figures: **`python scripts/make_paper_figures.py --demo --out_dir paper/figures`**.

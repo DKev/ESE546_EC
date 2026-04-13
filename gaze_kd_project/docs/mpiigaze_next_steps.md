@@ -90,7 +90,7 @@ python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt \
   --dataset mpiigaze --mpi_root ../MPIIGaze --mpi_eval_split val
 ```
 
-快速冒烟可加 `--mpi_max_samples 2048`（train / val 各最多保留这么多条，按扫描顺序截断）。若只想**缩小训练集**、保留完整验证集，用 **`--mpi_max_train_samples 10000`**（示例）即可。
+快速冒烟可加 `--mpi_max_samples 2048`（train / val 各最多保留这么多条，按扫描顺序截断）。若只想**缩小训练集**、保留完整验证集，用 **`--mpi_max_train_samples 10000`**（示例）即可。训练仍慢时：GPU 加 **`--amp`**；本仓库会对 MPII 在「涉及的 `.mat` 文件数不太多」时**预加载进内存**（见 README 的 Speed 小节）；Windows 多进程占内存时可 **`--num_workers 0`** 或 **`--mpi_no_preload`**。
 
 ### 4b CSV + `GazeDataset`
 

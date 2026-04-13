@@ -24,6 +24,7 @@ from utils import (
     collect_predictions,
     configure_training_runtime,
     count_parameters,
+    dataloader_common_kwargs,
     load_checkpoint,
     measure_latency,
     regression_metrics,
@@ -87,12 +88,12 @@ def main() -> None:
 
     ds = build_eval_dataset(args)
     print(f"Eval samples: {len(ds)}")
+    dl_kw = dataloader_common_kwargs(num_workers=args.num_workers, pin_memory=device.type == "cuda")
     loader = DataLoader(
         ds,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
+        **dl_kw,
     )
 
     metrics = regression_metrics(model, loader, device)

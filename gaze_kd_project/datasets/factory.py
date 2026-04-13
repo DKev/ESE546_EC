@@ -10,6 +10,16 @@ from datasets.gaze_dataset import GazeDataset
 from datasets.mpiigaze_dataset import MPIIGazeNormalizedDataset, parse_val_person_ids
 
 
+def _mpi_dataset_kwargs(args: argparse.Namespace) -> dict:
+    lim = args.mpi_preload_max_unique
+    if lim <= 0:
+        return {"no_preload": True, "preload_max_unique_mats": 512}
+    return {
+        "no_preload": args.mpi_no_preload,
+        "preload_max_unique_mats": lim,
+    }
+
+
 def add_gaze_data_args(p: argparse.ArgumentParser) -> None:
     g = p.add_argument_group("data")
     g.add_argument(
@@ -56,6 +66,17 @@ def add_gaze_data_args(p: argparse.ArgumentParser) -> None:
         choices=("train", "val"),
         help="For evaluate.py with dataset=mpiigaze: which participant split to score",
     )
+    g.add_argument(
+        "--mpi_no_preload",
+        action="store_true",
+        help="MPIIGaze: do not load .mat files into RAM (slower per sample; use if RAM is tight or many DataLoader workers duplicate memory on Windows)",
+    )
+    g.add_argument(
+        "--mpi_preload_max_unique",
+        type=int,
+        default=512,
+        help="MPIIGaze: preload at most this many distinct dayYY.mat files per split (0 disables preload same as --mpi_no_preload)",
+    )
 
 
 def build_train_val_datasets(args: argparse.Namespace) -> tuple[Dataset, Dataset]:
@@ -75,12 +96,14 @@ def build_train_val_datasets(args: argparse.Namespace) -> tuple[Dataset, Dataset
         if args.mpi_max_val_samples > 0
         else (args.mpi_max_samples if args.mpi_max_samples > 0 else 0)
     )
+    mk = _mpi_dataset_kwargs(args)
     train = MPIIGazeNormalizedDataset(
         args.mpi_root,
         split="train",
         val_person_ids=val_ids,
         image_size=args.image_size,
         max_samples=train_cap,
+        **mk,
     )
     val = MPIIGazeNormalizedDataset(
         args.mpi_root,
@@ -88,6 +111,7 @@ def build_train_val_datasets(args: argparse.Namespace) -> tuple[Dataset, Dataset
         val_person_ids=val_ids,
         image_size=args.image_size,
         max_samples=val_cap,
+        **mk,
     )
     return train, val
 
@@ -113,4 +137,5 @@ def build_eval_dataset(args: argparse.Namespace) -> Dataset:
         val_person_ids=val_ids,
         image_size=args.image_size,
         max_samples=cap,
+        **_mpi_dataset_kwargs(args),
     )

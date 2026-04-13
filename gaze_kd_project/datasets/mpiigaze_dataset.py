@@ -110,6 +110,8 @@ class MPIIGazeNormalizedDataset(Dataset):
         val_person_ids: set[int],
         image_size: int = 224,
         max_samples: int = 0,
+        no_preload: bool = False,
+        preload_max_unique_mats: int = 512,
     ) -> None:
         if split not in ("train", "val"):
             raise ValueError("split must be 'train' or 'val'")
@@ -136,6 +138,27 @@ class MPIIGazeNormalizedDataset(Dataset):
         cap = max_samples if max_samples > 0 else 0
         self._index = _build_index_for_persons(norm, use_ids, max_refs=cap)
 
+        unique_paths = {ref.mat_path for ref in self._index}
+        self._mat_cache: dict[Path, dict] | None = None
+        if (
+            not no_preload
+            and unique_paths
+            and len(unique_paths) <= max(1, preload_max_unique_mats)
+        ):
+            self._mat_cache = {}
+            for p in sorted(unique_paths):
+                self._mat_cache[p] = sio.loadmat(str(p), struct_as_record=False, squeeze_me=True)
+            print(
+                f"MPIIGaze [{split}]: preloaded {len(self._mat_cache)} .mat files "
+                f"({len(self._index)} samples) into RAM"
+            )
+        elif not no_preload and len(unique_paths) > preload_max_unique_mats:
+            print(
+                f"MPIIGaze [{split}]: {len(unique_paths)} unique .mat files > "
+                f"preload_max_unique={preload_max_unique_mats}; using lazy load "
+                f"(raise limit or use --mpi_no_preload to silence)"
+            )
+
         self.transform = transforms.Compose(
             [
                 transforms.Resize((image_size, image_size)),
@@ -146,18 +169,20 @@ class MPIIGazeNormalizedDataset(Dataset):
                 ),
             ]
         )
-        self._cache_path: Path | None = None
-        self._cache_mat: dict | None = None
+        self._lazy_path: Path | None = None
+        self._lazy_mat: dict | None = None
 
     def __len__(self) -> int:
         return len(self._index)
 
     def _ensure_mat(self, path: Path) -> dict:
-        if self._cache_path != path:
-            self._cache_mat = sio.loadmat(str(path), struct_as_record=False, squeeze_me=True)
-            self._cache_path = path
-        assert self._cache_mat is not None
-        return self._cache_mat
+        if self._mat_cache is not None:
+            return self._mat_cache[path]
+        if self._lazy_path != path:
+            self._lazy_mat = sio.loadmat(str(path), struct_as_record=False, squeeze_me=True)
+            self._lazy_path = path
+        assert self._lazy_mat is not None
+        return self._lazy_mat
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         ref = self._index[idx]

@@ -20,6 +20,8 @@ from models.teacher_model import build_teacher
 from utils import (
     append_metrics_csv,
     configure_training_runtime,
+    dataloader_common_kwargs,
+    grad_scaler_if_amp,
     save_checkpoint,
     set_seed,
     train_one_epoch,
@@ -48,6 +50,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="optional path to append per-epoch metrics (train/val MSE)",
     )
+    p.add_argument(
+        "--amp",
+        action="store_true",
+        help="CUDA automatic mixed precision (faster on GPU; no effect on CPU)",
+    )
     add_gaze_data_args(p)
     return p.parse_args()
 
@@ -66,20 +73,24 @@ def main() -> None:
     train_ds, val_ds = build_train_val_datasets(args)
     print(f"Train samples: {len(train_ds)}  Val samples: {len(val_ds)}")
 
+    dl_kw = dataloader_common_kwargs(num_workers=args.num_workers, pin_memory=device.type == "cuda")
     train_loader = DataLoader(
         train_ds,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
+        **dl_kw,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
+        **dl_kw,
     )
+
+    use_amp = bool(args.amp and device.type == "cuda")
+    scaler = grad_scaler_if_amp(use_amp=use_amp, device=device)
+    if use_amp:
+        print("AMP (mixed precision) enabled")
 
     model = build_teacher(pretrained=not args.no_pretrained).to(device)
     criterion = nn.MSELoss()
@@ -91,9 +102,16 @@ def main() -> None:
 
     for epoch in range(1, args.epochs + 1):
         train_loss = train_one_epoch(
-            model, train_loader, criterion, optimizer, device, desc=f"epoch {epoch} train"
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            desc=f"epoch {epoch} train",
+            use_amp=use_amp,
+            scaler=scaler,
         )
-        val_loss = validate_epoch(model, val_loader, criterion, device)
+        val_loss = validate_epoch(model, val_loader, criterion, device, use_amp=use_amp)
         print(f"Epoch {epoch}/{args.epochs}  train_mse: {train_loss:.6f}  val_mse: {val_loss:.6f}")
 
         improved = val_loss < best_val
