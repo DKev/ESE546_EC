@@ -16,6 +16,11 @@ Environment variables:
     GAZE_DEVICE     Optional: cuda, cuda:0, cpu
     GAZE_FACE_CROP  If ``1`` (default), run Haar face detection and crop before inference
     GAZE_FACE_EXPAND  Multiplier on face box width/height (default: 1.35)
+
+Each ``POST /predict`` multipart form may include optional ``face_crop``:
+    omit / empty  use ``GAZE_FACE_CROP`` env default
+    crop, 1, true, on   detect face and crop (same as env on)
+    original, full, 0, false, off   use full frame, no detection
 """
 
 from __future__ import annotations
@@ -24,8 +29,10 @@ import io
 import math
 import os
 import time
+from typing import Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from PIL import Image
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -52,13 +59,34 @@ def _face_crop_enabled() -> bool:
     return v in ("1", "true", "yes", "on")
 
 
-def _prepare_for_gaze(pil_rgb: Image.Image) -> tuple[Image.Image, dict]:
+def _parse_face_crop_form(value: Optional[str]) -> Optional[bool]:
+    """
+    None / empty -> use env default.
+    Otherwise return True (crop) or False (full frame).
+    """
+    if value is None:
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    v = s.lower()
+    if v in ("crop", "1", "true", "yes", "on"):
+        return True
+    if v in ("original", "full", "0", "false", "no", "off"):
+        return False
+    raise HTTPException(
+        status_code=400,
+        detail="Invalid face_crop; use crop|original (or 1|0), or omit for server default.",
+    )
+
+
+def _prepare_for_gaze(pil_rgb: Image.Image, *, use_face_crop: bool) -> tuple[Image.Image, dict]:
     """
     Optionally crop to the largest detected face. Always returns an RGB PIL image
     for the gaze model and metadata for the client overlay.
     """
-    if not _face_crop_enabled():
-        return pil_rgb, {
+    if not use_face_crop:
+        return pil_rgb.convert("RGB"), {
             "face_crop_enabled": False,
             "face_detected": None,
             "face_bbox": None,
@@ -124,7 +152,10 @@ def health() -> dict:
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)) -> dict:
+async def predict(
+    file: UploadFile = File(...),
+    face_crop: Optional[str] = Form(None),
+) -> dict:
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty image")
@@ -133,7 +164,9 @@ async def predict(file: UploadFile = File(...)) -> dict:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}") from e
 
-    model_img, face_meta = _prepare_for_gaze(pil_rgb)
+    crop_flag = _parse_face_crop_form(face_crop)
+    use_crop = _face_crop_enabled() if crop_flag is None else crop_flag
+    model_img, face_meta = _prepare_for_gaze(pil_rgb, use_face_crop=use_crop)
 
     if os.environ.get("GAZE_WEB_DEMO", "").strip() == "1":
         gx, gy = _demo_gaze()

@@ -31,6 +31,13 @@ function getRadius() {
   return Number(radiusEl.value);
 }
 
+/** @returns {null | "crop" | "original"} */
+function getFaceCropFormValue() {
+  const el = document.querySelector('input[name="faceCrop"]:checked');
+  if (!el || el.value === "default") return null;
+  return el.value === "crop" ? "crop" : "original";
+}
+
 radiusEl.addEventListener("input", () => {
   radiusVal.textContent = radiusEl.value;
 });
@@ -45,9 +52,9 @@ function resizeOverlayToVideo() {
 }
 
 function faceStatusText(data) {
-  if (data.face_crop_enabled === false) return "人脸: 裁剪关闭";
+  if (data.face_crop_enabled === false) return "人脸: 整图推理（未裁剪）";
   if (!("face_crop_enabled" in data)) return "";
-  if (data.face_detected === true) return "人脸: 已检测";
+  if (data.face_detected === true) return "人脸: 已检测并裁剪";
   return "人脸: 未检测到正脸（已用整图推理）";
 }
 
@@ -99,6 +106,8 @@ function redrawUploadCanvas() {
 async function predictBlob(blob) {
   const fd = new FormData();
   fd.append("file", blob, "frame.jpg");
+  const mode = getFaceCropFormValue();
+  if (mode) fd.append("face_crop", mode);
   const res = await fetch("/predict", { method: "POST", body: fd });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -215,7 +224,9 @@ fetch("/health")
   .then((j) => {
     let s = "";
     if (j.demo_mode) s = "服务器运行在 DEMO 模式（无真实模型）。";
-    if (j.face_crop_enabled === false) s += (s ? " " : "") + "人脸裁剪已关闭（GAZE_FACE_CROP=0）。";
+    if (j.face_crop_enabled === false) {
+      s += (s ? " " : "") + "服务器默认：整图（GAZE_FACE_CROP=0）；页面仍可选「人脸裁剪」覆盖。";
+    }
     if (s) setStatus(s);
   })
   .catch(() => {});

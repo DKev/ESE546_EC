@@ -17,7 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from config import default_train_config
-from datasets.gaze_dataset import GazeDataset
+from datasets.factory import add_gaze_data_args, build_eval_dataset
 from models.student_model import build_student
 from models.teacher_model import build_teacher
 from utils import (
@@ -35,7 +35,12 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate gaze model")
     p.add_argument("--model", type=str, choices=("teacher", "student"), required=True)
     p.add_argument("--checkpoint", type=str, required=True)
-    p.add_argument("--csv", type=str, required=True, help="validation or test CSV")
+    p.add_argument(
+        "--csv",
+        type=str,
+        default="",
+        help="validation/test CSV (required when --dataset csv)",
+    )
     p.add_argument("--data_root", type=str, default=cfg.data_root)
     p.add_argument("--batch_size", type=int, default=cfg.batch_size)
     p.add_argument("--image_size", type=int, default=cfg.image_size)
@@ -56,7 +61,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="optional path to save .npz with pred, gt arrays for scatter plots",
     )
-    return p.parse_args()
+    add_gaze_data_args(p)
+    args = p.parse_args()
+    if args.dataset == "csv" and not args.csv:
+        p.error("--csv is required when --dataset csv")
+    return args
 
 
 def main() -> None:
@@ -76,7 +85,8 @@ def main() -> None:
 
     load_checkpoint(args.checkpoint, model, optimizer=None, device=device)
 
-    ds = GazeDataset(args.csv, root_dir=args.data_root, image_size=args.image_size)
+    ds = build_eval_dataset(args)
+    print(f"Eval samples: {len(ds)}")
     loader = DataLoader(
         ds,
         batch_size=args.batch_size,
@@ -112,7 +122,10 @@ def main() -> None:
         payload = {
             "model": args.model,
             "checkpoint": os.path.abspath(args.checkpoint),
-            "csv": os.path.abspath(args.csv),
+            "dataset": args.dataset,
+            "csv": os.path.abspath(args.csv) if args.csv else "",
+            "mpi_root": os.path.abspath(args.mpi_root) if args.dataset == "mpiigaze" else "",
+            "mpi_eval_split": args.mpi_eval_split if args.dataset == "mpiigaze" else "",
             "mse": metrics["mse"],
             "mae": metrics["mae"],
             "mean_l2": metrics["mean_l2"],

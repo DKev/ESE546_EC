@@ -11,8 +11,8 @@
     <header>
       <h1>Gaze 眼动效果测试</h1>
       <p class="sub">
-        使用摄像头截取画面发送到本机模型；服务端先用 OpenCV Haar 检测正脸并裁剪，再预测注视点，并在画面上画出人脸框（绿色虚线）。
-        标签坐标约定与训练一致（约 <code>[-1, 1]</code>）；可用滑块调节映射幅度。
+        使用摄像头截取画面发送到本机模型；可选择<strong>人脸裁剪</strong>（Haar 正脸检测后裁切）或<strong>原始整图</strong>送入网络，也可跟随服务器环境变量默认。
+        裁剪时在画面上画出人脸框（绿色虚线）。标签坐标约定与训练一致（约 <code>[-1, 1]</code>）；可用滑块调节映射幅度。
       </p>
     </header>
 
@@ -24,6 +24,12 @@
       <div class="controls">
         <button type="button" id="btnStart">开启摄像头</button>
         <button type="button" id="btnPredict" disabled>预测一帧</button>
+        <div class="row crop-row" role="group" aria-label="输入模式">
+          <span class="crop-label">输入：</span>
+          <label class="inline"><input type="radio" name="faceCrop" value="default" checked /> 服务器默认</label>
+          <label class="inline"><input type="radio" name="faceCrop" value="crop" /> 人脸裁剪</label>
+          <label class="inline"><input type="radio" name="faceCrop" value="original" /> 原始整图</label>
+        </div>
         <label class="row">
           <input type="checkbox" id="chkLoop" />
           连续预测（约 4 FPS）

@@ -20,7 +20,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from config import default_train_config, ensure_parent_dir
-from datasets.gaze_dataset import GazeDataset
+from datasets.factory import add_gaze_data_args, build_train_val_datasets
 from models.student_model import build_student
 from models.teacher_model import build_teacher
 from utils import (
@@ -57,6 +57,7 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="optional path to append per-epoch KD metrics",
     )
+    add_gaze_data_args(p)
     return p.parse_args()
 
 
@@ -71,8 +72,8 @@ def main() -> None:
     print("Device:", device)
     configure_training_runtime(device)
 
-    train_ds = GazeDataset(args.train_csv, root_dir=args.data_root, image_size=args.image_size)
-    val_ds = GazeDataset(args.val_csv, root_dir=args.data_root, image_size=args.image_size)
+    train_ds, val_ds = build_train_val_datasets(args)
+    print(f"Train samples: {len(train_ds)}  Val samples: {len(val_ds)}")
 
     train_loader = DataLoader(
         train_ds,

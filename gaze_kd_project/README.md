@@ -2,7 +2,10 @@
 
 Course-style project: **2D gaze regression** from face images using a **ResNet18 teacher**, a **MobileNetV3-Small student**, and **knowledge distillation** (MSE to teacher + MSE to labels). The goal is to compare **accuracy**, **model size**, and **inference speed**, showing that distillation can improve a small model for mobile-style deployment.
 
-**中文分步教程（从零到训练 / 评估 / 网页）：** [docs/GETTING_STARTED_ZH.md](docs/GETTING_STARTED_ZH.md)
+**中文分步教程（从零到训练 / 评估 / 网页）：** [docs/GETTING_STARTED_ZH.md](docs/GETTING_STARTED_ZH.md)  
+**真实数据从哪下、怎么变成 CSV：** [docs/data_sources.md](docs/data_sources.md) 开头的「真实数据怎么拿」  
+**MPIIGaze 已下载后的下一步：** [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md)  
+**MPIIGaze 一条龙（下载 → 训练 → 评估 → 论文图）：** 见本文 [Real data workflow (MPIIGaze)](#real-data-workflow-mpiigaze)
 
 ## Requirements
 
@@ -57,6 +60,8 @@ python train_kd.py \
 
 DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_size 32`。
 
+使用 **MPIIGaze 真实数据** 的完整命令流见下文 **[Real data workflow (MPIIGaze)](#real-data-workflow-mpiigaze)**。
+
 ## Project layout
 
 | Path | Description |
@@ -64,6 +69,8 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 | `config.py` | Default hyperparameters and checkpoint paths |
 | `utils.py` | Seeding, train/val/KD loops, checkpoints, latency, metrics |
 | `datasets/gaze_dataset.py` | CSV-based `Dataset` (image + gaze x, y) |
+| `datasets/mpiigaze_dataset.py` | MPIIGaze `Data/Normalized` `.mat` → tensors |
+| `datasets/factory.py` | `--dataset csv` or `mpiigaze` wiring for train / eval |
 | `models/teacher_model.py` | ResNet18 → 2 outputs |
 | `models/student_model.py` | MobileNetV3-Small → 2 outputs |
 | `train_teacher.py` | Supervised teacher training (MSE) |
@@ -71,6 +78,7 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 | `train_kd.py` | Distilled student: `MSE(s,y) + alpha * MSE(s, teacher)` |
 | `evaluate.py` | MSE, MAE, mean L2, params, checkpoint size, latency / FPS |
 | `scripts/generate_synthetic_gaze_dataset.py` | Quick synthetic CSV + images for debugging |
+| `scripts/inspect_mpiigaze_layout.py` | After downloading MPIIGaze: peek folder layout |
 | `scripts/make_paper_figures.py` | Build PDF plots for the written report |
 | `scripts/build_eval_summary.py` | Merge several `evaluate.py` JSON exports |
 | `docs/data_sources.md` | Where to get MPIIGaze / how it maps to this CSV format |
@@ -90,12 +98,14 @@ export GAZE_MODEL=student   # 或 teacher
 python -m uvicorn web.server:app --host 127.0.0.1 --port 8765
 ```
 
-浏览器打开 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)：允许摄像头权限后，可「预测一帧」或勾选「连续预测」；也可用上传图片测试。默认会先用 **OpenCV Haar 正脸检测** 框出最大人脸、按比例放大裁剪后再送入 gaze 模型；页面上用**绿色虚线**画检测框，蓝点为注视点映射。
+浏览器打开 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)：允许摄像头权限后，可「预测一帧」或勾选「连续预测」；也可用上传图片测试。页面上可选 **服务器默认 / 人脸裁剪 / 原始整图**：裁剪模式会用 **OpenCV Haar** 检测正脸并放大框后送入模型，**绿色虚线**为检测框；原始整图则不做检测。蓝点为注视点映射。
+
+`POST /predict` 的 multipart 表单可带可选字段 **`face_crop`**：`crop` 或 `original`（也可用 `1`/`0`、`true`/`false`）；省略时沿用环境变量 `GAZE_FACE_CROP`。
 
 **人脸相关环境变量（可选）：**
 
 ```bash
-export GAZE_FACE_CROP=1          # 默认 1；设为 0 关闭检测，整图推理
+export GAZE_FACE_CROP=1          # 默认 1；设为 0 时「服务器默认」为整图推理
 export GAZE_FACE_EXPAND=1.35     # 框扩大倍数，略大于 1 可带上额头/下巴
 ```
 
@@ -106,7 +116,7 @@ export GAZE_WEB_DEMO=1
 python -m uvicorn web.server:app --host 127.0.0.1 --port 8765
 ```
 
-此时 `/predict` 仍会对上传图做人脸检测（便于看绿框），gaze 数值为平滑假轨迹。
+此时 `/predict` 仍会按所选模式做人脸检测或整图处理（便于看绿框），gaze 数值为平滑假轨迹。
 
 **说明：** Haar 对侧脸、强背光较弱；若未检测到正脸，会自动退回**整图**推理并在页面上提示。若你需要更高鲁棒性，可日后换成 MediaPipe / RetinaFace 等（需额外依赖）。
 
@@ -120,7 +130,102 @@ python -m uvicorn web.server:app --host 127.0.0.1 --port 8765
 
   Then point `--data_root`, `--train_csv`, and `--val_csv` at `data/synthetic/`.
 
-- **MPIIGaze (paper-quality):** download from MPI-INF or DaRUS (see the same doc), preprocess to face crops, then export `image_path,gaze_x,gaze_y` compatible with `GazeDataset`.
+- **MPIIGaze (real data):** full train → eval → figures pipeline is in **[Real data workflow (MPIIGaze)](#real-data-workflow-mpiigaze)** below. You can use the built-in `--dataset mpiigaze` reader **or** export your own CSV + images (see [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md), route B).
+
+## Real data workflow (MPIIGaze)
+
+This section is the **end-to-end checklist** for training and reporting on **MPIIGaze** with this repo. Labels come from `Data/Normalized/pXX/dayYY.mat` (unit gaze vectors → yaw/pitch scaled to about `[-1, 1]`, same scale as the synthetic toy data). For folder layout and license links, see [docs/data_sources.md](docs/data_sources.md) and [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md).
+
+### 1) Download, layout, and gitignore
+
+1. Download MPIIGaze from the sources listed in [docs/data_sources.md](docs/data_sources.md) and accept the dataset terms.  
+2. After unpacking, you should have **`<MPIIGAZE_ROOT>/Data/Normalized/pXX/dayYY.mat`** (and usually `Data/Original/`, etc.).  
+3. Keep the dataset **outside** git-tracked project folders or add the folder name to your **repo root** `.gitignore` (e.g. `MPIIGaze/`) so multi‑GB files are never committed.  
+4. `pip install -r requirements.txt` installs **SciPy** (required to read `.mat`).
+
+Optional layout check from the repo root:
+
+```bash
+python scripts/inspect_mpiigaze_layout.py /path/to/MPIIGaze
+```
+
+### 2) Train / val split flags
+
+- **`--mpi_val_persons 14,15`** → participants **`p14` and `p15`** are **validation**; **all other `pXX` folders** under `Data/Normalized` are **training**. Change the list as needed (comma-separated ids, no `p` prefix).  
+- **`--mpi_max_samples N`** (optional) → cap **each** split at `N` samples (first samples in scan order) for quick smoke tests.
+
+All commands below assume you run from **`gaze_kd_project/`** and set a shell variable for the dataset root (example: dataset next to the repo):
+
+```bash
+export MPI_ROOT=../MPIIGaze
+export MPI_VAL=14,15
+```
+
+### 3) Training (teacher, student, KD)
+
+```bash
+python train_teacher.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --checkpoint checkpoints/teacher_mpi.pt --epochs 20 \
+  --metrics_csv runs/m_teacher_mpi.csv
+
+python train_student.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 \
+  --metrics_csv runs/m_student_mpi.csv
+
+python train_kd.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --teacher_ckpt checkpoints/teacher_mpi.pt \
+  --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 \
+  --metrics_csv runs/m_kd_mpi.csv
+```
+
+Use **`--num_workers 0`** if the DataLoader workers fail on your OS; reduce **`--batch_size`** if you run out of GPU memory. On CPU, consider **`--mpi_max_samples`** for debugging.
+
+### 4) Evaluation
+
+Do **not** pass **`--csv`** when using **`--dataset mpiigaze`**. Use the **same** **`--mpi_root`** and **`--mpi_val_persons`** as in training. By default **`evaluate.py`** scores the **validation** participants; set **`--mpi_eval_split train`** to score the **training** participants instead.
+
+```bash
+python evaluate.py --model teacher --checkpoint checkpoints/teacher_mpi.pt \
+  --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --export_json runs/eval_teacher_mpi.json
+
+python evaluate.py --model student --checkpoint checkpoints/student_baseline_mpi.pt \
+  --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --export_json runs/eval_student_mpi.json
+
+python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt \
+  --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --export_json runs/eval_kd_mpi.json \
+  --save_predictions runs/student_kd_mpi_val.npz
+```
+
+### 5) Paper figures (same scripts as synthetic)
+
+Merge the three JSON files, then build PDFs under **`paper/figures/`** (point the metrics arguments at the MPII CSV logs):
+
+```bash
+python scripts/build_eval_summary.py --out runs/summary_mpi.json \
+  --teacher runs/eval_teacher_mpi.json \
+  --student_baseline runs/eval_student_mpi.json \
+  --student_kd runs/eval_kd_mpi.json
+
+python scripts/make_paper_figures.py --out_dir paper/figures \
+  --summary runs/summary_mpi.json \
+  --metrics_teacher runs/m_teacher_mpi.csv \
+  --metrics_student runs/m_student_mpi.csv \
+  --metrics_kd runs/m_kd_mpi.csv \
+  --scatter_npz runs/student_kd_mpi_val.npz
+```
+
+If you skip **`--save_predictions`**, omit **`--scatter_npz ...`** from the last command. Placeholder figures: **`python scripts/make_paper_figures.py --demo --out_dir paper/figures`**.
+
+### 6) Web demo vs. MPIIGaze crops
+
+The **browser demo** resizes **webcam / upload** images to **224×224** (optional face crop). Models trained on **`--dataset mpiigaze`** see **Normalized eye patches** upsampled to 224. Expect a **domain gap** unless you match preprocessing (e.g. eye-region crops or a model trained on full-face CSV data).
+
+### 7) Optional: CSV + `GazeDataset` instead
+
+To train with **`--dataset csv`**, export **`image_path,gaze_x,gaze_y`** yourself and keep the same convention everywhere. See [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md) (route B) and the [CSV format](#csv-format) section in this README.
 
 ## Paper, plots, and LaTeX
 
@@ -134,7 +239,9 @@ The course template you have locally can be compared with [paper/report.tex](pap
    python train_kd.py ... --metrics_csv runs/m_kd.csv
    ```
 
-2. **Export evaluation JSON** after you have checkpoints:
+2. **Export evaluation JSON** after you have checkpoints.
+
+   **Synthetic (CSV) example:**
 
    ```bash
    python evaluate.py --model teacher --checkpoint checkpoints/teacher_best.pt --csv data/synthetic/val.csv --data_root data/synthetic --export_json runs/eval_teacher.json
@@ -142,7 +249,9 @@ The course template you have locally can be compared with [paper/report.tex](pap
    python evaluate.py --model student --checkpoint checkpoints/student_kd_best.pt --csv data/synthetic/val.csv --data_root data/synthetic --export_json runs/eval_kd.json
    ```
 
-   Optional scatter figure: add `--save_predictions runs/student_kd_val.npz` on the last command.
+   **MPIIGaze:** use the same three models but **`--dataset mpiigaze --mpi_root ... --mpi_val_persons ...`** and **no `--csv`** — copy the block in **[Real data workflow (MPIIGaze)](#real-data-workflow-mpiigaze)** §4.
+
+   Optional scatter figure: add `--save_predictions runs/student_kd_val.npz` (or `runs/student_kd_mpi_val.npz` for MPII) on the last `evaluate.py` command.
 
 3. **Merge JSON and build figures:**
 
@@ -192,7 +301,7 @@ data/person_a/003.png,0.0,0.0
 
 Place images accordingly (e.g. under `data/samples/` if you use `data/` as `--data_root`).
 
-**Adapting to MPIIGaze / GazeCapture:** keep this CSV interface; write a small script that exports `(path, gaze_x, gaze_y)` from those datasets’ native labels into this format.
+**MPIIGaze without CSV:** use **`--dataset mpiigaze`** (see [Real data workflow (MPIIGaze)](#real-data-workflow-mpiigaze)). **With CSV:** keep this interface and export `(path, gaze_x, gaze_y)` from native labels (see [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md)). **GazeCapture** and others: same CSV idea once paths and labels align.
 
 ## Training
 
@@ -274,11 +383,11 @@ Override with CLI flags on any script.
 
 ## Suggested run order
 
-1. Prepare `train.csv` / `val.csv` and images.  
+1. **Data:** either generate **synthetic** CSV + images, or follow **[Real data workflow (MPIIGaze)](#real-data-workflow-mpiigaze)** / prepare your own **CSV + images**.  
 2. `train_teacher.py`  
 3. `train_student.py`  
 4. `train_kd.py` (needs teacher checkpoint)  
-5. `evaluate.py` on the same val/test CSV for teacher, student baseline, and KD student.
+5. `evaluate.py` on the **same split** (same `--csv` / `--dataset` / `--mpi_*` flags as training) for teacher, student baseline, and KD student.
 
 ## Results table for your report
 
