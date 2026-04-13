@@ -7,6 +7,7 @@
 %     --metrics_teacher runs/m_teacher_mpi.csv --metrics_student runs/m_student_mpi.csv \
 %     --metrics_kd runs/m_kd_mpi.csv [--scatter_npz ...]
 % Loss curves use the metrics CSVs (first 20 epochs by default: ``--max_plot_epochs``).
+% Figures are PNG (default 300 dpi); LaTeX uses \includegraphics{*.png}.
 % See README ``Paper, plots, and LaTeX``.
 
 \documentclass[10pt, reqno, letterpaper, twoside]{amsart}
@@ -49,7 +50,7 @@ This report describes a course codebase where the task is boring on purpose: res
 
 \begin{itemize}
   \item PyTorch code: MPIIGaze reader or CSV, teacher/student switches (\texttt{gaze\_micro} included), KD with weight $\alpha$.
-  \item Training logs to CSV, eval to JSON, and a \texttt{make\_paper\_figures.py} helper that builds the PDFs we embed below.
+  \item Training logs to CSV, eval to JSON, and a \texttt{make\_paper\_figures.py} helper that writes PNGs we include below.
   \item A short empirical section: regression errors, parameter counts, and timing on one validation protocol.
 \end{itemize}
 
@@ -85,51 +86,51 @@ MPIIGaze~\cite{zhang15mpiigaze} is the dataset people cite for ``in the wild'' l
 
 We trained on MPIIGaze normalized patches via \texttt{--dataset mpiigaze}. Train and val use different people (e.g.\ held-out \texttt{p14}, \texttt{p15} in the README example). The important detail for reproducing our table: \textbf{train is subsampled to 10{,}000 frames per epoch} (\texttt{--mpi\_max\_train\_samples 10000}), deterministic order. Val is \textbf{not} subsampled.
 
-We log curves with \texttt{--metrics\_csv}. After training, \texttt{evaluate.py --export\_json} three times, then \texttt{build\_eval\_summary.py}, then \texttt{make\_paper\_figures.py}. The loss PDF only looks at the CSVs; the bar charts and size/speed figures read the merged JSON. If a KD run went 40 epochs, the plot script clips to the first 20 points by default so the x-axis is readable (\texttt{--max\_plot\_epochs}).
+We log curves with \texttt{--metrics\_csv}. After training, \texttt{evaluate.py --export\_json} three times, then \texttt{build\_eval\_summary.py}, then \texttt{make\_paper\_figures.py} (outputs PNG at 300\,dpi by default). The loss figure only uses the CSVs; the bar charts and size/speed figures read the merged JSON. If a KD run went 40 epochs, the plot script clips to the first 20 points by default so the x-axis is readable (\texttt{--max\_plot\_epochs}).
 
 \subsection{Quantitative comparison}
 
-Table~\ref{tab:main} is filled from the same JSON the bar chart uses. Figure~\ref{fig:loss} is from the CSVs.
+Table~\ref{tab:main} matches the merged eval JSON used for the bar charts. Figure~\ref{fig:loss} comes from the training CSVs.
 
 \begin{table}[H]
   \centering
-  \caption{Validation metrics and efficiency (from merged evaluation JSON).}
+  \caption{MPIIGaze validation split (\texttt{mpi\_eval\_split\,=\,val}), batch-1 latency on the same machine as training. Numbers from merged \texttt{evaluate.py} JSON (teacher/student checkpoints as in the repo README).}
   \label{tab:main}
   \begin{tabular}{lcccccc}
     \toprule
     Model & MSE $\downarrow$ & MAE $\downarrow$ & Mean L2 $\downarrow$ & Params & ms/img $\downarrow$ \\
     \midrule
-    Teacher & -- & -- & -- & -- & -- \\
-    Student (baseline) & -- & -- & -- & -- & -- \\
-    Student + KD        & -- & -- & -- & -- & -- \\
+    Teacher (MobileNetV3-Small) & 0.00212 & 0.0261 & 0.0408 & 1\,519\,906 & 7.04 \\
+    Student (\texttt{gaze\_micro}, baseline) & 0.00837 & 0.0521 & 0.0816 & 49\,426 & 1.61 \\
+    Student (\texttt{gaze\_micro}) + KD & 0.00641 & 0.0455 & 0.0713 & 49\,426 & 1.56 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{loss_curves.pdf}
+  \includegraphics[width=\linewidth]{loss_curves.png}
   \caption{Validation MSE per epoch from \texttt{--metrics\_csv}. KD line is student vs.\ ground truth on val (same as the other two curves). First 20 epochs shown by default if the log is longer.}
   \label{fig:loss}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{metrics_compare.pdf}
+  \includegraphics[width=\linewidth]{metrics_compare.png}
   \caption{Bars from merged eval JSON. Should match Table~\ref{tab:main}.}
   \label{fig:metrics}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{efficiency.pdf}
+  \includegraphics[width=\linewidth]{efficiency.png}
   \caption{Left: parameters in thousands (annotations in M or k). Right: latency, batch 1, same setup as \texttt{evaluate.py}.}
   \label{fig:eff}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{predict_speed.pdf}
+  \includegraphics[width=\linewidth]{predict_speed.png}
   \caption{Same timing idea as the right panel of Figure~\ref{fig:eff}, pulled out as its own figure with FPS text.}
   \label{fig:speed}
 \end{figure}

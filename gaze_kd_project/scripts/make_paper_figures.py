@@ -5,7 +5,7 @@ Build matplotlib figures for the course report.
 Reads optional training metric CSVs (from ``--metrics_csv``) and a merged evaluation
 summary JSON (from ``scripts/build_eval_summary.py``). The efficiency figure uses
 parameters in **thousands** (×10³) so small students (e.g. ``gaze_micro`` ~50k) stay
-visible next to a MobileNetV3-Small teacher (~1.5M). A separate **predict_speed.pdf**
+visible next to a MobileNetV3-Small teacher (~1.5M). A separate **predict_speed.png**
 compares ms/image (and approximate FPS). ``teacher_arch`` / ``student_arch`` from
 ``evaluate.py`` JSON appear in subtitles when present. Loss curves from CSVs are
 trimmed to the first **20 epochs** by default (``--max_plot_epochs``) so long KD runs do not
@@ -16,6 +16,8 @@ Usage (from ``gaze_kd_project``)::
     python scripts/make_paper_figures.py --summary runs/summary.json \\
         --metrics_teacher runs/m_teacher.csv --metrics_student runs/m_student.csv \\
         --metrics_kd runs/m_kd.csv --out_dir paper/figures
+
+Figures are written as **PNG** (default 300 DPI) for reliable inclusion in LaTeX; use ``--dpi`` to change resolution.
 
 """
 
@@ -30,6 +32,19 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+def save_figure(fig, out_path: Path, dpi: int) -> None:
+    """Write ``out_path`` as PNG (extension forced to ``.png``)."""
+    path = Path(out_path).with_suffix(".png")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(
+        path,
+        format="png",
+        dpi=dpi,
+        bbox_inches="tight",
+        pad_inches=0.05,
+    )
 
 
 def read_supervised_csv(path: Path) -> tuple[list[int], list[float], list[float]]:
@@ -101,6 +116,7 @@ def plot_loss_curves(
     kd: Path | None,
     demo: bool,
     max_plot_epochs: int = 20,
+    dpi: int = 300,
 ) -> None:
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     if demo:
@@ -126,11 +142,11 @@ def plot_loss_curves(
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(out_path, format="pdf")
+    save_figure(fig, out_path, dpi)
     plt.close(fig)
 
 
-def plot_metric_bars(summary: dict, out_path: Path, demo: bool) -> None:
+def plot_metric_bars(summary: dict, out_path: Path, demo: bool, dpi: int = 300) -> None:
     labels = ["Teacher", "Student\n(baseline)", "Student\n+ KD"]
     if demo or not summary:
         mse = [0.031, 0.052, 0.041]
@@ -169,11 +185,11 @@ def plot_metric_bars(summary: dict, out_path: Path, demo: bool) -> None:
     if cap:
         fig.suptitle(cap, fontsize=8, y=1.02)
     fig.tight_layout()
-    fig.savefig(out_path, format="pdf")
+    save_figure(fig, out_path, dpi)
     plt.close(fig)
 
 
-def plot_efficiency(summary: dict, out_path: Path, demo: bool) -> None:
+def plot_efficiency(summary: dict, out_path: Path, demo: bool, dpi: int = 300) -> None:
     # Use params in thousands so MV3-Small (~1.5M) and gaze_micro (~0.1M) are both visible.
     if demo or not summary:
         names = ["Teacher", "Student\n(baseline)", "Student\n+ KD"]
@@ -231,11 +247,11 @@ def plot_efficiency(summary: dict, out_path: Path, demo: bool) -> None:
     cap = _arch_caption(summary) if not demo and summary else ""
     fig.suptitle("Efficiency comparison" + (f" — {cap}" if cap else ""), fontsize=9, y=1.03)
     fig.tight_layout()
-    fig.savefig(out_path, format="pdf")
+    save_figure(fig, out_path, dpi)
     plt.close(fig)
 
 
-def plot_predict_speed(summary: dict, out_path: Path, demo: bool) -> None:
+def plot_predict_speed(summary: dict, out_path: Path, demo: bool, dpi: int = 300) -> None:
     """Bar chart of ms/image with FPS annotations (from JSON ``fps`` or 1000/ms)."""
     names = ["Teacher", "Student\n(baseline)", "Student\n+ KD"]
     colors = ["#4C72B0", "#55A868", "#C44E52"]
@@ -271,11 +287,11 @@ def plot_predict_speed(summary: dict, out_path: Path, demo: bool) -> None:
     cap = _arch_caption(summary) if not demo and summary else ""
     fig.suptitle("Inference speed comparison" + (f" — {cap}" if cap else ""), fontsize=9, y=1.03)
     fig.tight_layout()
-    fig.savefig(out_path, format="pdf")
+    save_figure(fig, out_path, dpi)
     plt.close(fig)
 
 
-def plot_scatter_npz(npz_path: Path, out_path: Path) -> None:
+def plot_scatter_npz(npz_path: Path, out_path: Path, dpi: int = 300) -> None:
     data = np.load(npz_path)
     pred = data["pred"]
     gt = data["gt"]
@@ -290,7 +306,7 @@ def plot_scatter_npz(npz_path: Path, out_path: Path) -> None:
         axes[i].grid(True, alpha=0.3)
     fig.suptitle("Predictions vs. ground truth (student + KD)")
     fig.tight_layout()
-    fig.savefig(out_path, format="pdf")
+    save_figure(fig, out_path, dpi)
     plt.close(fig)
 
 
@@ -316,7 +332,13 @@ def main() -> None:
         "--max_plot_epochs",
         type=int,
         default=20,
-        help="loss_curves.pdf: use only the first N rows from each metrics CSV (default 20); 0 = no trim",
+        help="loss_curves: use only the first N rows from each metrics CSV (default 20); 0 = no trim",
+    )
+    p.add_argument(
+        "--dpi",
+        type=int,
+        default=300,
+        help="PNG resolution for all figures (default 300)",
     )
     args = p.parse_args()
 
@@ -337,39 +359,42 @@ def main() -> None:
     use_demo_curves = args.demo or not have_curve_csvs
     if use_demo_curves:
         print(
-            "loss_curves.pdf: using synthetic decay curves (not your training logs). "
+            "loss_curves.png: using synthetic decay curves (not your training logs). "
             "To plot real val MSE: train with --metrics_csv on teacher, student, and KD, "
             "then pass --metrics_teacher, --metrics_student, --metrics_kd to this script "
             "(and do not use --demo)."
         )
     else:
-        msg = f"loss_curves.pdf: from CSVs {mt} {ms} {mk}"
+        msg = f"loss_curves.png: from CSVs {mt} {ms} {mk}"
         if args.max_plot_epochs > 0:
             msg += f" (first {args.max_plot_epochs} epochs per series)"
         print(msg)
     plot_loss_curves(
-        out_dir / "loss_curves.pdf",
+        out_dir / "loss_curves.png",
         mt,
         ms,
         mk,
         demo=use_demo_curves,
         max_plot_epochs=args.max_plot_epochs,
+        dpi=args.dpi,
     )
 
     # Fix demo logic for bars: demo flag OR incomplete summary
     bar_demo = args.demo or not {"teacher", "student_baseline", "student_kd"}.issubset(summary.keys())
-    plot_metric_bars(summary if not bar_demo else {}, out_dir / "metrics_compare.pdf", demo=bar_demo)
-    plot_efficiency(summary if not bar_demo else {}, out_dir / "efficiency.pdf", demo=bar_demo)
-    plot_predict_speed(summary if not bar_demo else {}, out_dir / "predict_speed.pdf", demo=bar_demo)
-    print("Wrote predict_speed.pdf")
+    plot_metric_bars(
+        summary if not bar_demo else {}, out_dir / "metrics_compare.png", demo=bar_demo, dpi=args.dpi
+    )
+    plot_efficiency(summary if not bar_demo else {}, out_dir / "efficiency.png", demo=bar_demo, dpi=args.dpi)
+    plot_predict_speed(
+        summary if not bar_demo else {}, out_dir / "predict_speed.png", demo=bar_demo, dpi=args.dpi
+    )
+    print(f"Wrote PNG figures (dpi={args.dpi}) under {out_dir.resolve()}")
 
     if args.scatter_npz and Path(args.scatter_npz).is_file():
-        plot_scatter_npz(Path(args.scatter_npz), out_dir / "gaze_scatter.pdf")
-        print("Wrote gaze_scatter.pdf")
+        plot_scatter_npz(Path(args.scatter_npz), out_dir / "gaze_scatter.png", dpi=args.dpi)
+        print("Wrote gaze_scatter.png")
     else:
         print("Skipping gaze scatter (provide --scatter_npz pointing to a .npz)")
-
-    print(f"Wrote figures to {out_dir.resolve()}")
 
 
 if __name__ == "__main__":

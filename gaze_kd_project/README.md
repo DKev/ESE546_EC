@@ -80,7 +80,7 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 | `evaluate.py` | MSE, MAE, mean L2, params, checkpoint size, latency / FPS |
 | `scripts/generate_synthetic_gaze_dataset.py` | Quick synthetic CSV + images for debugging |
 | `scripts/inspect_mpiigaze_layout.py` | After downloading MPIIGaze: peek folder layout |
-| `scripts/make_paper_figures.py` | Build PDF plots for the written report |
+| `scripts/make_paper_figures.py` | Build PNG figures (default 300\,dpi) for the LaTeX report |
 | `scripts/build_eval_summary.py` | Merge several `evaluate.py` JSON exports |
 | `docs/data_sources.md` | Where to get MPIIGaze / how it maps to this CSV format |
 | `paper/report.tex` | AMS-style 5-page report template (fill table with your numbers) |
@@ -278,9 +278,9 @@ python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt --
 
 ### 5) Paper figures (same scripts as synthetic)
 
-Merge the three JSON files, then build PDFs under **`paper/figures/`**.
+Merge the three JSON files, then build **PNG** figures under **`paper/figures/`** (default **300 dpi**; override with **`--dpi`** on `make_paper_figures.py`).
 
-**`loss_curves.pdf`:** the loss figure is **not** built from `summary.json`. It only uses the three **per-epoch metric CSVs** from training (`--metrics_csv`). Pass **`--metrics_teacher`**, **`--metrics_student`**, and **`--metrics_kd`** to `make_paper_figures.py`; each file must exist. For the MPII commands in §3 above, those files are exactly:
+**`loss_curves.png`:** the loss figure is **not** built from `summary.json`. It only uses the three **per-epoch metric CSVs** from training (`--metrics_csv`). Pass **`--metrics_teacher`**, **`--metrics_student`**, and **`--metrics_kd`** to `make_paper_figures.py`; each file must exist. For the MPII commands in §3 above, those files are exactly:
 
 - `runs/m_teacher_mpi.csv`
 - `runs/m_student_mpi.csv`
@@ -356,7 +356,7 @@ The course template you have locally can be compared with [paper/report.tex](pap
 
    Optional scatter figure: add `--save_predictions runs/student_kd_val.npz` (or `runs/student_kd_mpi_val.npz` for MPII) on the last `evaluate.py` command.
 
-3. **Merge JSON and build figures:** pass the **same `--metrics_csv` paths** from training so **`loss_curves.pdf`** shows real validation MSE (not the built-in dummy curves).
+3. **Merge JSON and build figures:** pass the **same `--metrics_csv` paths** from training so **`loss_curves.png`** matches your logged validation MSE.
 
    **Synthetic data** (paths from the quickstart in this README):
 
