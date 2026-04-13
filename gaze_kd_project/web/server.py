@@ -12,7 +12,8 @@ Open http://127.0.0.1:8765/
 Environment variables:
     GAZE_CKPT       Path to .pt checkpoint (required unless GAZE_WEB_DEMO=1)
     GAZE_MODEL      ``student`` or ``teacher`` (default: student)
-    GAZE_TEACHER_ARCH  ``resnet18`` or ``mobilenet_v2``; empty = infer from checkpoint (teacher only)
+    GAZE_TEACHER_ARCH  e.g. ``mobilenet_v3_small``; empty = infer from checkpoint (teacher only)
+    GAZE_STUDENT_ARCH  e.g. ``gaze_micro`` or ``shufflenet_v2_x0_5``; empty = infer from ckpt (student)
     GAZE_WEB_DEMO   If ``1``, return fake smooth gaze (no model, UI test only)
     GAZE_DEVICE     Optional: cuda, cuda:0, cpu
     GAZE_FACE_CROP  If ``1`` (default), run Haar face detection and crop before inference
@@ -121,8 +122,13 @@ def _get_session() -> GazeInferenceSession:
             raise HTTPException(status_code=500, detail="GAZE_MODEL must be student or teacher")
         dev = os.environ.get("GAZE_DEVICE", "").strip() or None
         t_arch = os.environ.get("GAZE_TEACHER_ARCH", "").strip()
+        s_arch = os.environ.get("GAZE_STUDENT_ARCH", "").strip()
         _session = GazeInferenceSession(
-            ckpt, model_name=model, device=dev, teacher_arch=t_arch
+            ckpt,
+            model_name=model,
+            device=dev,
+            teacher_arch=t_arch,
+            student_arch=s_arch,
         )
     return _session
 

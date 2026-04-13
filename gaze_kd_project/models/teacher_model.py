@@ -1,33 +1,40 @@
-"""Teacher backbones with a 2D gaze regression head (ResNet18 or MobileNetV2)."""
+"""Teacher backbones with a 2D gaze regression head."""
 
 from __future__ import annotations
 
 import torch.nn as nn
 from torchvision.models import (
     MobileNet_V2_Weights,
+    MobileNet_V3_Small_Weights,
     ResNet18_Weights,
     mobilenet_v2,
+    mobilenet_v3_small,
     resnet18,
 )
 
-# Canonical names for CLI / checkpoints
 TEACHER_ARCH_RESNET18 = "resnet18"
 TEACHER_ARCH_MOBILENET_V2 = "mobilenet_v2"
+TEACHER_ARCH_MOBILENET_V3_SMALL = "mobilenet_v3_small"
 
 
 def normalize_teacher_arch(name: str) -> str:
-    """Map aliases to ``resnet18`` or ``mobilenet_v2``."""
     n = name.strip().lower().replace("-", "_")
     aliases = {
         "r18": TEACHER_ARCH_RESNET18,
         "mv2": TEACHER_ARCH_MOBILENET_V2,
         "mobilenetv2": TEACHER_ARCH_MOBILENET_V2,
+        "mv3": TEACHER_ARCH_MOBILENET_V3_SMALL,
+        "mv3_small": TEACHER_ARCH_MOBILENET_V3_SMALL,
+        "mobilenetv3_small": TEACHER_ARCH_MOBILENET_V3_SMALL,
     }
     n = aliases.get(n, n)
-    if n not in (TEACHER_ARCH_RESNET18, TEACHER_ARCH_MOBILENET_V2):
-        raise ValueError(
-            f"Unknown teacher arch {name!r}; use {TEACHER_ARCH_RESNET18} or {TEACHER_ARCH_MOBILENET_V2}"
-        )
+    allowed = (
+        TEACHER_ARCH_RESNET18,
+        TEACHER_ARCH_MOBILENET_V2,
+        TEACHER_ARCH_MOBILENET_V3_SMALL,
+    )
+    if n not in allowed:
+        raise ValueError(f"Unknown teacher arch {name!r}; use one of {allowed}")
     return n
 
 
@@ -55,7 +62,6 @@ def teacher_arch_from_checkpoint(path: str, default: str = TEACHER_ARCH_RESNET18
 
 
 def resolve_teacher_arch(cli_value: str, checkpoint_path: str) -> str:
-    """Use explicit CLI arch if set; otherwise infer from ``checkpoint_path``."""
     if cli_value and str(cli_value).strip():
         return normalize_teacher_arch(str(cli_value))
     return teacher_arch_from_checkpoint(checkpoint_path)
@@ -67,8 +73,8 @@ def build_teacher(pretrained: bool = True, arch: str = TEACHER_ARCH_RESNET18) ->
 
     Args:
         pretrained: If True, load torchvision ImageNet weights (except the new head).
-        arch: ``resnet18`` (default) or ``mobilenet_v2`` (lighter; often less prone to
-            overfitting on small gaze splits than ResNet18).
+        arch: ``resnet18``, ``mobilenet_v2``, or ``mobilenet_v3_small`` (same trunk as the
+            default student; use when MV3-Small is the strongest backbone on your data).
     """
     arch = normalize_teacher_arch(arch)
     if arch == TEACHER_ARCH_RESNET18:
@@ -77,9 +83,15 @@ def build_teacher(pretrained: bool = True, arch: str = TEACHER_ARCH_RESNET18) ->
         in_features = model.fc.in_features
         model.fc = nn.Linear(in_features, 2)
         return model
+    if arch == TEACHER_ARCH_MOBILENET_V2:
+        weights = MobileNet_V2_Weights.DEFAULT if pretrained else None
+        model = mobilenet_v2(weights=weights)
+        in_features = model.classifier[-1].in_features
+        model.classifier[-1] = nn.Linear(in_features, 2)
+        return model
 
-    weights = MobileNet_V2_Weights.DEFAULT if pretrained else None
-    model = mobilenet_v2(weights=weights)
+    weights = MobileNet_V3_Small_Weights.DEFAULT if pretrained else None
+    model = mobilenet_v3_small(weights=weights)
     in_features = model.classifier[-1].in_features
     model.classifier[-1] = nn.Linear(in_features, 2)
     return model

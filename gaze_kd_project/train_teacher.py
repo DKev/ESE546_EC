@@ -1,10 +1,10 @@
 """
-Train the teacher (ResNet18 or MobileNetV2) with supervised MSE on gaze (x, y).
+Train the teacher (ResNet18, MobileNetV2, or MobileNetV3-Small) with supervised MSE on gaze (x, y).
 
 Run from the ``gaze_kd_project`` directory:
 
     python train_teacher.py --train_csv data/train.csv --val_csv data/val.csv
-    python train_teacher.py --dataset mpiigaze ... --teacher_arch mobilenet_v2
+    python train_teacher.py --dataset mpiigaze ... --teacher_arch mobilenet_v3_small
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from config import default_train_config, ensure_parent_dir
 from datasets.factory import add_gaze_data_args, build_train_val_datasets
 from models.teacher_model import (
     TEACHER_ARCH_MOBILENET_V2,
+    TEACHER_ARCH_MOBILENET_V3_SMALL,
     TEACHER_ARCH_RESNET18,
     build_teacher,
 )
@@ -36,7 +37,7 @@ from utils import (
 
 def parse_args() -> argparse.Namespace:
     cfg = default_train_config()
-    p = argparse.ArgumentParser(description="Train gaze teacher (ResNet18 or MobileNetV2)")
+    p = argparse.ArgumentParser(description="Train gaze teacher (ResNet18 / MobileNetV2 / MobileNetV3-Small)")
     p.add_argument("--train_csv", type=str, default=cfg.train_csv)
     p.add_argument("--val_csv", type=str, default=cfg.val_csv)
     p.add_argument("--data_root", type=str, default=cfg.data_root)
@@ -53,8 +54,12 @@ def parse_args() -> argparse.Namespace:
         "--teacher_arch",
         type=str,
         default=TEACHER_ARCH_RESNET18,
-        choices=(TEACHER_ARCH_RESNET18, TEACHER_ARCH_MOBILENET_V2),
-        help="Teacher backbone: resnet18 (default) or mobilenet_v2 (smaller, often better on small data)",
+        choices=(
+            TEACHER_ARCH_RESNET18,
+            TEACHER_ARCH_MOBILENET_V2,
+            TEACHER_ARCH_MOBILENET_V3_SMALL,
+        ),
+        help="Teacher: resnet18 | mobilenet_v2 | mobilenet_v3_small (use MV3-Small when it fits your data best)",
     )
     p.add_argument(
         "--metrics_csv",

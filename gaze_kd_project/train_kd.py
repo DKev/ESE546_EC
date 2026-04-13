@@ -21,7 +21,12 @@ from torch.utils.data import DataLoader
 
 from config import default_train_config, ensure_parent_dir
 from datasets.factory import add_gaze_data_args, build_train_val_datasets
-from models.student_model import build_student
+from models.student_model import (
+    STUDENT_ARCH_GAZE_MICRO,
+    STUDENT_ARCH_MOBILENET_V3_SMALL,
+    STUDENT_ARCH_SHUFFLENET_V2_X0_5,
+    build_student,
+)
 from models.teacher_model import build_teacher, resolve_teacher_arch
 from utils import (
     append_metrics_csv,
@@ -57,7 +62,18 @@ def parse_args() -> argparse.Namespace:
         "--teacher_arch",
         type=str,
         default="",
-        help="Teacher backbone: resnet18 | mobilenet_v2; empty = read from teacher ckpt extra.args (else resnet18)",
+        help="Teacher: resnet18 | mobilenet_v2 | mobilenet_v3_small; empty = read from teacher ckpt (else resnet18)",
+    )
+    p.add_argument(
+        "--student_arch",
+        type=str,
+        default=STUDENT_ARCH_MOBILENET_V3_SMALL,
+        choices=(
+            STUDENT_ARCH_MOBILENET_V3_SMALL,
+            STUDENT_ARCH_SHUFFLENET_V2_X0_5,
+            STUDENT_ARCH_GAZE_MICRO,
+        ),
+        help="Student backbone (gaze_micro ~0.10M for extreme KD; shufflenet ~0.34M)",
     )
     p.add_argument(
         "--metrics_csv",
@@ -115,7 +131,11 @@ def main() -> None:
         p.requires_grad = False
     teacher.eval()
 
-    student = build_student(pretrained=not args.no_pretrained_student).to(device)
+    print("Student backbone:", args.student_arch)
+    student = build_student(
+        pretrained=not args.no_pretrained_student,
+        arch=args.student_arch,
+    ).to(device)
     mse = nn.MSELoss()
     optimizer = torch.optim.Adam(student.parameters(), lr=args.lr)
 

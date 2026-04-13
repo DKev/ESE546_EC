@@ -14,7 +14,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from models.student_model import build_student
+from models.student_model import build_student, resolve_student_arch
 from models.teacher_model import build_teacher, resolve_teacher_arch
 from utils import configure_training_runtime, load_checkpoint
 
@@ -44,6 +44,7 @@ class GazeInferenceSession:
         image_size: int = 224,
         device: Optional[str] = None,
         teacher_arch: str = "",
+        student_arch: str = "",
     ) -> None:
         if not os.path.isfile(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
@@ -60,7 +61,8 @@ class GazeInferenceSession:
             arch = resolve_teacher_arch(teacher_arch, checkpoint_path)
             self.model = build_teacher(pretrained=False, arch=arch).to(self.device)
         else:
-            self.model = build_student(pretrained=False).to(self.device)
+            s_arch = resolve_student_arch(student_arch, checkpoint_path)
+            self.model = build_student(pretrained=False, arch=s_arch).to(self.device)
 
         load_checkpoint(checkpoint_path, self.model, optimizer=None, device=self.device)
         self.model.eval()

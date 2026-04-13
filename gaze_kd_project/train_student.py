@@ -1,9 +1,11 @@
 """
-Train the MobileNetV3-Small student baseline (no distillation).
+Train the student baseline (no distillation): MobileNetV3-Small or ultra-tiny ShuffleNetV2-x0.5.
 
 Run from the ``gaze_kd_project`` directory:
 
     python train_student.py --train_csv data/train.csv --val_csv data/val.csv
+    python train_student.py --student_arch shufflenet_v2_x0_5 ...  # ~0.34M params
+    python train_student.py --student_arch gaze_micro ...  # ~0.10M params (KD-friendly)
 """
 
 from __future__ import annotations
@@ -16,7 +18,12 @@ from torch.utils.data import DataLoader
 
 from config import default_train_config, ensure_parent_dir
 from datasets.factory import add_gaze_data_args, build_train_val_datasets
-from models.student_model import build_student
+from models.student_model import (
+    STUDENT_ARCH_GAZE_MICRO,
+    STUDENT_ARCH_MOBILENET_V3_SMALL,
+    STUDENT_ARCH_SHUFFLENET_V2_X0_5,
+    build_student,
+)
 from utils import (
     append_metrics_csv,
     configure_training_runtime,
@@ -31,7 +38,9 @@ from utils import (
 
 def parse_args() -> argparse.Namespace:
     cfg = default_train_config()
-    p = argparse.ArgumentParser(description="Train gaze student baseline (MobileNetV3-Small)")
+    p = argparse.ArgumentParser(
+        description="Train gaze student baseline (MV3-Small, ShuffleNetV2-x0.5, or gaze_micro)"
+    )
     p.add_argument("--train_csv", type=str, default=cfg.train_csv)
     p.add_argument("--val_csv", type=str, default=cfg.val_csv)
     p.add_argument("--data_root", type=str, default=cfg.data_root)
@@ -44,6 +53,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=cfg.seed)
     p.add_argument("--device", type=str, default="", help="cuda, cpu, or empty for auto")
     p.add_argument("--no_pretrained", action="store_true", help="train from scratch")
+    p.add_argument(
+        "--student_arch",
+        type=str,
+        default=STUDENT_ARCH_MOBILENET_V3_SMALL,
+        choices=(
+            STUDENT_ARCH_MOBILENET_V3_SMALL,
+            STUDENT_ARCH_SHUFFLENET_V2_X0_5,
+            STUDENT_ARCH_GAZE_MICRO,
+        ),
+        help="Student backbone (gaze_micro ~0.10M params, no ImageNet init)",
+    )
     p.add_argument(
         "--metrics_csv",
         type=str,
@@ -92,7 +112,8 @@ def main() -> None:
     if use_amp:
         print("AMP (mixed precision) enabled")
 
-    model = build_student(pretrained=not args.no_pretrained).to(device)
+    print("Student backbone:", args.student_arch)
+    model = build_student(pretrained=not args.no_pretrained, arch=args.student_arch).to(device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 

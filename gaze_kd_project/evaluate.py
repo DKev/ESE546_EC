@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 
 from config import default_train_config
 from datasets.factory import add_gaze_data_args, build_eval_dataset
-from models.student_model import build_student
+from models.student_model import build_student, resolve_student_arch
 from models.teacher_model import build_teacher, resolve_teacher_arch
 from utils import (
     collect_predictions,
@@ -54,7 +54,13 @@ def parse_args() -> argparse.Namespace:
         "--teacher_arch",
         type=str,
         default="",
-        help="When --model teacher: resnet18 | mobilenet_v2; empty = read from checkpoint extra.args",
+        help="When --model teacher: resnet18 | mobilenet_v2 | mobilenet_v3_small; empty = read from ckpt",
+    )
+    p.add_argument(
+        "--student_arch",
+        type=str,
+        default="",
+        help="When --model student: mobilenet_v3_small | shufflenet_v2_x0_5 | gaze_micro; empty = ckpt",
     )
     p.add_argument(
         "--export_json",
@@ -86,12 +92,15 @@ def main() -> None:
     configure_training_runtime(device)
 
     teacher_arch_used = ""
+    student_arch_used = ""
     if args.model == "teacher":
         teacher_arch_used = resolve_teacher_arch(args.teacher_arch, args.checkpoint)
         print("Teacher backbone:", teacher_arch_used)
         model = build_teacher(pretrained=not args.no_pretrained, arch=teacher_arch_used).to(device)
     else:
-        model = build_student(pretrained=not args.no_pretrained).to(device)
+        student_arch_used = resolve_student_arch(args.student_arch, args.checkpoint)
+        print("Student backbone:", student_arch_used)
+        model = build_student(pretrained=not args.no_pretrained, arch=student_arch_used).to(device)
 
     load_checkpoint(args.checkpoint, model, optimizer=None, device=device)
 
@@ -132,6 +141,7 @@ def main() -> None:
         payload = {
             "model": args.model,
             "teacher_arch": teacher_arch_used if args.model == "teacher" else "",
+            "student_arch": student_arch_used if args.model == "student" else "",
             "checkpoint": os.path.abspath(args.checkpoint),
             "dataset": args.dataset,
             "csv": os.path.abspath(args.csv) if args.csv else "",

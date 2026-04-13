@@ -1,6 +1,6 @@
 # Lightweight Gaze Estimation + Knowledge Distillation (PyTorch)
 
-Course-style project: **2D gaze regression** from face images using a **MobileNetV2 teacher**, a **MobileNetV3-Small student**, and **knowledge distillation** (MSE to teacher + MSE to labels). The teacher is deliberately lighter than a classic ResNet so small datasets overfit less; you can still use **ResNet18** via `--teacher_arch resnet18`. The goal is to compare **accuracy**, **model size**, and **inference speed**, showing that distillation can improve the small student for mobile-style deployment.
+Course-style project: **2D gaze regression** from face images using a **teacher** (default in docs: **MobileNetV2**), a **student** (default: **MobileNetV3-Small**), and **knowledge distillation** (MSE to teacher + MSE to labels). You can use **`--teacher_arch mobilenet_v3_small`** if that backbone fits your data best, and smaller students: **`--student_arch shufflenet_v2_x0_5`** (~0.34M) or **`gaze_micro`** (~0.10M, custom CNN, no ImageNet weights). The teacher is deliberately lighter than a classic ResNet so small datasets overfit less; you can still use **ResNet18** via `--teacher_arch resnet18`. The goal is to compare **accuracy**, **model size**, and **inference speed**, showing that distillation can improve the small student for mobile-style deployment.
 
 **中文分步教程（从零到训练 / 评估 / 网页）：** [docs/GETTING_STARTED_ZH.md](docs/GETTING_STARTED_ZH.md)  
 **真实数据从哪下、怎么变成 CSV：** [docs/data_sources.md](docs/data_sources.md) 开头的「真实数据怎么拿」  
@@ -72,8 +72,8 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 | `datasets/gaze_dataset.py` | CSV-based `Dataset` (image + gaze x, y) |
 | `datasets/mpiigaze_dataset.py` | MPIIGaze `Data/Normalized` `.mat` → tensors |
 | `datasets/factory.py` | `--dataset csv` or `mpiigaze` wiring for train / eval |
-| `models/teacher_model.py` | Teacher: **MobileNetV2** (default in docs) or **ResNet18** → 2 outputs |
-| `models/student_model.py` | Student: **MobileNetV3-Small** → 2 outputs |
+| `models/teacher_model.py` | Teacher: **ResNet18**, **MobileNetV2**, or **MobileNetV3-Small** → 2 outputs |
+| `models/student_model.py` | Student: **MV3-Small** (default), **ShuffleNetV2 x0.5**, or **gaze_micro** (~100k params) → 2 outputs |
 | `train_teacher.py` | Supervised teacher training (MSE) |
 | `train_student.py` | Supervised student baseline (MSE) |
 | `train_kd.py` | Distilled student: `MSE(s,y) + alpha * MSE(s, teacher)` |
@@ -95,8 +95,9 @@ DataLoader 若报错可尝试 `--num_workers 0`；显存不够可把 `--batch_si
 cd gaze_kd_project
 # 使用你训练好的 MobileNetV3-Small student / KD student 权重（或 MobileNetV2 teacher）：
 export GAZE_CKPT=checkpoints/student_kd_best.pt
-export GAZE_MODEL=student   # 或 teacher（teacher 默认按 ckpt 推断为 mobilenet_v2）
-# 仅当加载旧 ResNet18 老师 ckpt 且无元数据时： export GAZE_TEACHER_ARCH=resnet18
+export GAZE_MODEL=student   # 或 teacher（架构默认按 ckpt 的 extra.args 推断）
+# 仅当 ckpt 无元数据时需指定： export GAZE_TEACHER_ARCH=resnet18
+# 若 ckpt 无 student_arch： export GAZE_STUDENT_ARCH=gaze_micro   # 或 shufflenet_v2_x0_5
 python -m uvicorn web.server:app --host 127.0.0.1 --port 8765
 ```
 
@@ -136,7 +137,7 @@ python -m uvicorn web.server:app --host 127.0.0.1 --port 8765
 
 ## Real data workflow (MPIIGaze)
 
-This section is the **end-to-end checklist** for training and reporting on **MPIIGaze** with this repo. **Teacher = MobileNetV2**, **student = MobileNetV3-Small** (same as the synthetic quickstart). Labels come from `Data/Normalized/pXX/dayYY.mat` (unit gaze vectors → yaw/pitch scaled to about `[-1, 1]`, same scale as the synthetic toy data). For folder layout and license links, see [docs/data_sources.md](docs/data_sources.md) and [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md).
+This section is the **end-to-end checklist** for training and reporting on **MPIIGaze** with this repo. Defaults match the synthetic quickstart: **teacher = MobileNetV2**, **student = MobileNetV3-Small**; you can switch to **`--teacher_arch mobilenet_v3_small`** and **`--student_arch gaze_micro`** (or ShuffleNet) on the train scripts. Labels come from `Data/Normalized/pXX/dayYY.mat` (unit gaze vectors → yaw/pitch scaled to about `[-1, 1]`, same scale as the synthetic toy data). For folder layout and license links, see [docs/data_sources.md](docs/data_sources.md) and [docs/mpiigaze_next_steps.md](docs/mpiigaze_next_steps.md).
 
 ### 1) Download, layout, and gitignore
 
@@ -183,7 +184,7 @@ $env:MPI_ROOT="..\MPIIGaze"; $env:MPI_VAL="14,15"
 
 Examples below use **`--mpi_max_train_samples 10000`** so each epoch stays fast; drop that flag to train on the full MPII train split. Validation on `p14`/`p15` stays complete unless you add **`--mpi_max_val_samples`**.
 
-Also included: **`--teacher_arch mobilenet_v2`** on **`train_teacher.py`** (documented default teacher); **`train_student.py`** is always **MobileNetV3-Small**. Plus **`--amp`** (CUDA mixed precision; omit on CPU-only), **`--num_workers 0`** (recommended on **Windows** to avoid duplicating `.mat` preload RAM; on Linux you can try **`--num_workers 4`**). Remove **`--amp`** if you do not have a GPU.
+Also included: **`--teacher_arch`** on **`train_teacher.py`** (documented default **`mobilenet_v2`**); **`--student_arch`** on **`train_student.py`** / **`train_kd.py`** (default **`mobilenet_v3_small`**). Plus **`--amp`** (CUDA mixed precision; omit on CPU-only), **`--num_workers 0`** (recommended on **Windows** to avoid duplicating `.mat` preload RAM; on Linux you can try **`--num_workers 4`**). Remove **`--amp`** if you do not have a GPU.
 
 **macOS / Linux**
 
@@ -399,9 +400,9 @@ Place images accordingly (e.g. under `data/samples/` if you use `data/` as `--da
 
 Run all commands from `gaze_kd_project/` unless you adjust `PYTHONPATH`.
 
-### 1) Teacher (MobileNetV2, default in this README)
+### 1) Teacher (MobileNetV2 by default in this README)
 
-The documented pipeline uses **MobileNetV2** as the teacher (~2M params): strong enough to supervise the student but lighter than ResNet18 on small gaze splits. **`--teacher_arch`** is stored in the checkpoint; **`train_kd.py`** / **`evaluate.py`** read it unless you override with **`--teacher_arch`**.
+The documented pipeline uses **MobileNetV2** as the teacher (~2.2M params): strong enough to supervise the student but lighter than ResNet18 on small gaze splits. **MobileNetV3-Small** (~1.5M) is also supported as teacher via **`--teacher_arch mobilenet_v3_small`**. **`--teacher_arch`** is stored in the checkpoint; **`train_kd.py`** / **`evaluate.py`** read it unless you override with **`--teacher_arch`**.
 
 ```bash
 python train_teacher.py \
@@ -414,7 +415,9 @@ python train_teacher.py \
 
 **Optional heavier teacher:** **`--teacher_arch resnet18`** (~11M params).
 
-### 2) Student baseline (MobileNetV3-Small, no KD)
+### 2) Student baseline (no KD)
+
+Default student backbone is **MobileNetV3-Small**. Use **`--student_arch shufflenet_v2_x0_5`** (~0.34M) or **`gaze_micro`** (~0.10M, from scratch) for smaller models.
 
 ```bash
 python train_student.py \
@@ -424,9 +427,9 @@ python train_student.py \
   --checkpoint checkpoints/student_baseline_best.pt
 ```
 
-### 3) Student (MobileNetV3-Small) + knowledge distillation
+### 3) Student + knowledge distillation
 
-Requires a **MobileNetV2** teacher checkpoint (paths above). Student remains **MobileNetV3-Small**.
+Requires a trained teacher checkpoint (paths above). Match **`--student_arch`** across **`train_student.py`**, **`train_kd.py`**, and **`evaluate.py`** when not using the default (e.g. **gaze_micro** or ShuffleNet).
 
 ```bash
 python train_kd.py \
@@ -438,7 +441,7 @@ python train_kd.py \
   --alpha 0.5
 ```
 
-**Loss:** `total = MSE(student, ground_truth) + alpha * MSE(student, teacher_prediction)`. The **MobileNetV2** teacher is frozen and in eval mode.
+**Loss:** `total = MSE(student, ground_truth) + alpha * MSE(student, teacher_prediction)`. The teacher is frozen and in eval mode.
 
 ## Evaluation
 
@@ -453,7 +456,7 @@ python evaluate.py --model teacher --checkpoint checkpoints/teacher_best.pt \
 ```
 (Omit **`--teacher_arch`** if the checkpoint already stores it in `extra.args`.)
 
-**Student (MobileNetV3-Small, baseline or KD checkpoint):**
+**Student (baseline or KD checkpoint):**
 
 ```bash
 python evaluate.py --model student --checkpoint checkpoints/student_baseline_best.pt \
@@ -462,6 +465,7 @@ python evaluate.py --model student --checkpoint checkpoints/student_baseline_bes
 python evaluate.py --model student --checkpoint checkpoints/student_kd_best.pt \
   --csv data/val.csv --data_root data
 ```
+(Omit **`--student_arch`** if the checkpoint stores it in `extra.args`; otherwise pass **`gaze_micro`** / **`shufflenet_v2_x0_5`** as needed.)
 
 Reported metrics:
 
