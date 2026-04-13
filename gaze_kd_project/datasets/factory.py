@@ -35,7 +35,19 @@ def add_gaze_data_args(p: argparse.ArgumentParser) -> None:
         "--mpi_max_samples",
         type=int,
         default=0,
-        help="If >0, cap each split at this many samples (debug / quick runs)",
+        help="If >0, cap train and val at this many samples each (ignored if train/val-specific caps are set)",
+    )
+    g.add_argument(
+        "--mpi_max_train_samples",
+        type=int,
+        default=0,
+        help="If >0, cap training split only (e.g. 10000 for fast epochs; val unchanged unless mpi_max_val_samples set)",
+    )
+    g.add_argument(
+        "--mpi_max_val_samples",
+        type=int,
+        default=0,
+        help="If >0, cap validation split only",
     )
     g.add_argument(
         "--mpi_eval_split",
@@ -53,19 +65,29 @@ def build_train_val_datasets(args: argparse.Namespace) -> tuple[Dataset, Dataset
         return train, val
 
     val_ids = parse_val_person_ids(args.mpi_val_persons)
+    train_cap = (
+        args.mpi_max_train_samples
+        if args.mpi_max_train_samples > 0
+        else (args.mpi_max_samples if args.mpi_max_samples > 0 else 0)
+    )
+    val_cap = (
+        args.mpi_max_val_samples
+        if args.mpi_max_val_samples > 0
+        else (args.mpi_max_samples if args.mpi_max_samples > 0 else 0)
+    )
     train = MPIIGazeNormalizedDataset(
         args.mpi_root,
         split="train",
         val_person_ids=val_ids,
         image_size=args.image_size,
-        max_samples=args.mpi_max_samples,
+        max_samples=train_cap,
     )
     val = MPIIGazeNormalizedDataset(
         args.mpi_root,
         split="val",
         val_person_ids=val_ids,
         image_size=args.image_size,
-        max_samples=args.mpi_max_samples,
+        max_samples=val_cap,
     )
     return train, val
 
@@ -78,10 +100,17 @@ def build_eval_dataset(args: argparse.Namespace) -> Dataset:
     split = args.mpi_eval_split
     if split not in ("train", "val"):
         raise ValueError("mpi_eval_split must be train or val")
+    cap = (
+        args.mpi_max_train_samples
+        if split == "train" and args.mpi_max_train_samples > 0
+        else args.mpi_max_val_samples
+        if split == "val" and args.mpi_max_val_samples > 0
+        else (args.mpi_max_samples if args.mpi_max_samples > 0 else 0)
+    )
     return MPIIGazeNormalizedDataset(
         args.mpi_root,
         split=split,
         val_person_ids=val_ids,
         image_size=args.image_size,
-        max_samples=args.mpi_max_samples,
+        max_samples=cap,
     )

@@ -152,33 +152,98 @@ python scripts/inspect_mpiigaze_layout.py /path/to/MPIIGaze
 ### 2) Train / val split flags
 
 - **`--mpi_val_persons 14,15`** → participants **`p14` and `p15`** are **validation**; **all other `pXX` folders** under `Data/Normalized` are **training**. Change the list as needed (comma-separated ids, no `p` prefix).  
-- **`--mpi_max_samples N`** (optional) → cap **each** split at `N` samples (first samples in scan order) for quick smoke tests.
+- **`--mpi_max_train_samples N`** (optional) → cap **training** split at `N` samples only; validation stays **full** unless you also set **`--mpi_max_val_samples`**. Use this for fast epochs (e.g. **`--mpi_max_train_samples 10000`**) when the full train set is huge. Subsample order is deterministic (sorted participants → days → frames → left/right).
+- **`--mpi_max_val_samples N`** (optional) → cap **validation** split only.
+- **`--mpi_max_samples N`** (optional) → cap **both** train and val at `N` each (ignored for a split if the split-specific cap above is set).
 
-All commands below assume you run from **`gaze_kd_project/`** and set a shell variable for the dataset root (example: dataset next to the repo):
+Run all training commands from **`gaze_kd_project/`**. Set the dataset root and validation person ids as shown (dataset folder next to `gaze_kd_project` → `..\MPIIGaze` on Windows, `../MPIIGaze` on Unix).
+
+**macOS / Linux**
 
 ```bash
 export MPI_ROOT=../MPIIGaze
 export MPI_VAL=14,15
 ```
 
+**Windows (Command Prompt)**
+
+```bat
+set MPI_ROOT=..\MPIIGaze
+set MPI_VAL=14,15
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:MPI_ROOT = "..\MPIIGaze"
+$env:MPI_VAL = "14,15"
+```
+
 ### 3) Training (teacher, student, KD)
+
+Examples below use **`--mpi_max_train_samples 10000`** so each epoch stays fast; drop that flag to train on the full MPII train split. Validation on `p14`/`p15` stays complete unless you add **`--mpi_max_val_samples`**.
+
+**macOS / Linux**
 
 ```bash
 python train_teacher.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --mpi_max_train_samples 10000 \
   --checkpoint checkpoints/teacher_mpi.pt --epochs 20 \
   --metrics_csv runs/m_teacher_mpi.csv
 
 python train_student.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --mpi_max_train_samples 10000 \
   --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 \
   --metrics_csv runs/m_student_mpi.csv
 
 python train_kd.py --dataset mpiigaze --mpi_root "$MPI_ROOT" --mpi_val_persons "$MPI_VAL" \
+  --mpi_max_train_samples 10000 \
   --teacher_ckpt checkpoints/teacher_mpi.pt \
   --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 \
   --metrics_csv runs/m_kd_mpi.csv
 ```
 
-Use **`--num_workers 0`** if the DataLoader workers fail on your OS; reduce **`--batch_size`** if you run out of GPU memory. On CPU, consider **`--mpi_max_samples`** for debugging.
+**Windows (Command Prompt)** — use `%MPI_ROOT%` / `%MPI_VAL%`; line continuation is `^`
+
+```bat
+python train_teacher.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% ^
+  --mpi_max_train_samples 10000 ^
+  --checkpoint checkpoints\teacher_mpi.pt --epochs 20 ^
+  --metrics_csv runs\m_teacher_mpi.csv
+
+python train_student.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% ^
+  --mpi_max_train_samples 10000 ^
+  --checkpoint checkpoints\student_baseline_mpi.pt --epochs 20 ^
+  --metrics_csv runs\m_student_mpi.csv
+
+python train_kd.py --dataset mpiigaze --mpi_root %MPI_ROOT% --mpi_val_persons %MPI_VAL% ^
+  --mpi_max_train_samples 10000 ^
+  --teacher_ckpt checkpoints\teacher_mpi.pt ^
+  --checkpoint checkpoints\student_kd_mpi.pt --epochs 20 ^
+  --metrics_csv runs\m_kd_mpi.csv
+```
+
+**Windows (PowerShell)** — use `$env:MPI_ROOT` / `$env:MPI_VAL`; backtick `` ` `` continues a line
+
+```powershell
+python train_teacher.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL `
+  --mpi_max_train_samples 10000 `
+  --checkpoint checkpoints/teacher_mpi.pt --epochs 20 `
+  --metrics_csv runs/m_teacher_mpi.csv
+
+python train_student.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL `
+  --mpi_max_train_samples 10000 `
+  --checkpoint checkpoints/student_baseline_mpi.pt --epochs 20 `
+  --metrics_csv runs/m_student_mpi.csv
+
+python train_kd.py --dataset mpiigaze --mpi_root $env:MPI_ROOT --mpi_val_persons $env:MPI_VAL `
+  --mpi_max_train_samples 10000 `
+  --teacher_ckpt checkpoints/teacher_mpi.pt `
+  --checkpoint checkpoints/student_kd_mpi.pt --epochs 20 `
+  --metrics_csv runs/m_kd_mpi.csv
+```
+
+Use **`--num_workers 0`** if the DataLoader workers fail on your OS; reduce **`--batch_size`** if you run out of GPU memory.
 
 ### 4) Evaluation
 
