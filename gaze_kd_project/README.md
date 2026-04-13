@@ -278,7 +278,15 @@ python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt --
 
 ### 5) Paper figures (same scripts as synthetic)
 
-Merge the three JSON files, then build PDFs under **`paper/figures/`** (point the metrics arguments at the MPII CSV logs):
+Merge the three JSON files, then build PDFs under **`paper/figures/`**.
+
+**`loss_curves.pdf` and your real training runs:** the loss figure is **not** built from `summary.json`. It only uses the three **per-epoch metric CSVs** you wrote during training with `--metrics_csv`. You must pass **`--metrics_teacher`**, **`--metrics_student`**, and **`--metrics_kd`** to `make_paper_figures.py`, and each file must exist. If any path is missing or you use **`--demo`**, the script draws **placeholder exponential curves** instead. For the MPII commands in §3 above, those files are exactly:
+
+- `runs/m_teacher_mpi.csv`
+- `runs/m_student_mpi.csv`
+- `runs/m_kd_mpi.csv`
+
+Full example (merge eval JSON, then figures — **includes the CSVs so the loss plot matches your logs**):
 
 ```bash
 python scripts/build_eval_summary.py --out runs/summary_mpi.json \
@@ -310,7 +318,7 @@ python scripts/build_eval_summary.py --out runs/summary_mpi.json --teacher runs/
 python scripts/make_paper_figures.py --out_dir paper/figures --summary runs/summary_mpi.json --metrics_teacher runs/m_teacher_mpi.csv --metrics_student runs/m_student_mpi.csv --metrics_kd runs/m_kd_mpi.csv --scatter_npz runs/student_kd_mpi_val.npz
 ```
 
-If you skip **`--save_predictions`**, omit **`--scatter_npz ...`** from the last command. Placeholder figures: **`python scripts/make_paper_figures.py --demo --out_dir paper/figures`**.
+If you skip **`--save_predictions`**, omit **`--scatter_npz ...`** from the last `make_paper_figures.py` command. Placeholder figures (synthetic loss + bars): **`python scripts/make_paper_figures.py --demo --out_dir paper/figures`**.
 
 ### 6) Web demo vs. MPIIGaze crops
 
@@ -346,7 +354,9 @@ The course template you have locally can be compared with [paper/report.tex](pap
 
    Optional scatter figure: add `--save_predictions runs/student_kd_val.npz` (or `runs/student_kd_mpi_val.npz` for MPII) on the last `evaluate.py` command.
 
-3. **Merge JSON and build figures:**
+3. **Merge JSON and build figures:** pass the **same `--metrics_csv` paths** from training so **`loss_curves.pdf`** shows real validation MSE (not the built-in dummy curves).
+
+   **Synthetic data** (paths from the quickstart in this README):
 
    ```bash
    python scripts/build_eval_summary.py --out runs/summary.json \
@@ -360,6 +370,22 @@ The course template you have locally can be compared with [paper/report.tex](pap
      --metrics_student runs/m_student.csv \
      --metrics_kd runs/m_kd.csv \
      --scatter_npz runs/student_kd_val.npz
+   ```
+
+   **MPIIGaze** (same CSV names as [§3 in Real data workflow](#real-data-workflow-mpiigaze)):
+
+   ```bash
+   python scripts/build_eval_summary.py --out runs/summary_mpi.json \
+     --teacher runs/eval_teacher_mpi.json \
+     --student_baseline runs/eval_student_mpi.json \
+     --student_kd runs/eval_kd_mpi.json
+
+   python scripts/make_paper_figures.py --out_dir paper/figures \
+     --summary runs/summary_mpi.json \
+     --metrics_teacher runs/m_teacher_mpi.csv \
+     --metrics_student runs/m_student_mpi.csv \
+     --metrics_kd runs/m_kd_mpi.csv \
+     --scatter_npz runs/student_kd_mpi_val.npz
    ```
 
    If you have not trained yet, generate **placeholder** PDFs with `python scripts/make_paper_figures.py --demo --out_dir paper/figures`.

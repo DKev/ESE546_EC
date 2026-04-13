@@ -315,6 +315,20 @@ def main() -> None:
         mt and ms and mk and mt.is_file() and ms.is_file() and mk.is_file()
     )
     use_demo_curves = args.demo or not have_curve_csvs
+    if use_demo_curves:
+        print(
+            "loss_curves.pdf: using synthetic decay curves (not your training logs). "
+            "To plot real val MSE: train with --metrics_csv on teacher, student, and KD, "
+            "then pass --metrics_teacher, --metrics_student, --metrics_kd to this script "
+            "(and do not use --demo)."
+        )
+    else:
+        print(
+            "loss_curves.pdf: from CSVs",
+            mt,
+            ms,
+            mk,
+        )
     plot_loss_curves(
         out_dir / "loss_curves.pdf",
         mt,

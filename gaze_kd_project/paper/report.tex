@@ -69,7 +69,7 @@ Appearance-based gaze estimation was popularized in part by MPIIGaze~\cite{zhang
 
 \paragraph{Models.} The teacher backbone is configurable: we primarily use MobileNetV2 (final classifier layer replaced by a linear map to two outputs). For comparison we also trained a ResNet-18 teacher with the same head. The student is always MobileNetV3-Small with an analogous two-dimensional output. All backbones use ImageNet initialization for convolutional features when available.
 
-\paragraph{Training.} We use Adam with learning rate $10^{-4}$, batch size $64$, and $20$ epochs unless noted. Checkpoints with the best validation objective are saved: validation MSE for teacher and student baseline, and the combined KD validation loss for the distilled student. CUDA uses cuDNN benchmark mode and higher matmul precision where supported for throughput.
+\paragraph{Training.} We use Adam with learning rate $10^{-4}$, batch size $64$, and $20$ epochs unless noted. Checkpoints with the best validation objective are saved: validation MSE for teacher and student baseline, and the combined KD validation loss for the distilled student. On NVIDIA GPUs we enable \textbf{automatic mixed precision} (AMP) via PyTorch \texttt{autocast} and \texttt{GradScaler} (training flag \texttt{--amp}), which speeds up forward/backward passes with minimal change to the optimization recipe; CPU-only runs omit AMP. CUDA uses cuDNN benchmark mode and higher matmul precision where supported for throughput.
 
 \paragraph{Evaluation.} We report MSE (mean squared $\ell_2$ error per sample), mean absolute error averaged over the two coordinates, and mean Euclidean distance between $\hat{\mathbf{g}}$ and $\mathbf{g}$. We also report parameter count, checkpoint file size on disk, and mean milliseconds per image on a dummy tensor with batch size one after warmup.
 
@@ -79,7 +79,7 @@ Appearance-based gaze estimation was popularized in part by MPIIGaze~\cite{zhang
 
 For reproducible end-to-end debugging, we include a \emph{synthetic} generator that renders a simple face ellipse and a pupil whose offset encodes $(g_x,g_y) \in [-1,1]^2$. This dataset is \textbf{not} a substitute for MPIIGaze in the wild, but it provides consistent labels and fast iteration. For final course reporting, download MPIIGaze from the MPI-INF or DaRUS mirrors, convert labels to your $(g_x,g_y)$ convention, and export the same CSV format.
 
-We split data into training and validation CSV files. All models are evaluated on the same validation CSV. Training curves are logged with optional \texttt{--metrics\_csv}; evaluation metrics are exported with \texttt{--export\_json} and merged for plotting.
+We split data into training and validation CSV files. All models are evaluated on the same validation CSV. Reported training runs use \textbf{AMP on GPU} as above unless stated otherwise. Training curves are logged with optional \texttt{--metrics\_csv}; evaluation metrics are exported with \texttt{--export\_json} and merged for plotting.
 
 \subsection{Quantitative comparison}
 
