@@ -280,7 +280,7 @@ python evaluate.py --model student --checkpoint checkpoints/student_kd_mpi.pt --
 
 Merge the three JSON files, then build PDFs under **`paper/figures/`**.
 
-**`loss_curves.pdf` and your real training runs:** the loss figure is **not** built from `summary.json`. It only uses the three **per-epoch metric CSVs** you wrote during training with `--metrics_csv`. You must pass **`--metrics_teacher`**, **`--metrics_student`**, and **`--metrics_kd`** to `make_paper_figures.py`, and each file must exist. If any path is missing or you use **`--demo`**, the script draws **placeholder exponential curves** instead. For the MPII commands in §3 above, those files are exactly:
+**`loss_curves.pdf`:** the loss figure is **not** built from `summary.json`. It only uses the three **per-epoch metric CSVs** from training (`--metrics_csv`). Pass **`--metrics_teacher`**, **`--metrics_student`**, and **`--metrics_kd`** to `make_paper_figures.py`; each file must exist. For the MPII commands in §3 above, those files are exactly:
 
 - `runs/m_teacher_mpi.csv`
 - `runs/m_student_mpi.csv`
@@ -320,7 +320,7 @@ python scripts/build_eval_summary.py --out runs/summary_mpi.json --teacher runs/
 python scripts/make_paper_figures.py --out_dir paper/figures --summary runs/summary_mpi.json --metrics_teacher runs/m_teacher_mpi.csv --metrics_student runs/m_student_mpi.csv --metrics_kd runs/m_kd_mpi.csv --scatter_npz runs/student_kd_mpi_val.npz
 ```
 
-If you skip **`--save_predictions`**, omit **`--scatter_npz ...`** from the last `make_paper_figures.py` command. Placeholder figures (synthetic loss + bars): **`python scripts/make_paper_figures.py --demo --out_dir paper/figures`**.
+If you skip **`--save_predictions`**, omit **`--scatter_npz ...`** from the last `make_paper_figures.py` command.
 
 ### 6) Web demo vs. MPIIGaze crops
 
@@ -389,8 +389,6 @@ The course template you have locally can be compared with [paper/report.tex](pap
      --metrics_kd runs/m_kd_mpi.csv \
      --scatter_npz runs/student_kd_mpi_val.npz
    ```
-
-   If you have not trained yet, generate **placeholder** PDFs with `python scripts/make_paper_figures.py --demo --out_dir paper/figures`.
 
 4. **Compile the PDF** (needs a LaTeX install such as MacTeX / TeX Live):
 

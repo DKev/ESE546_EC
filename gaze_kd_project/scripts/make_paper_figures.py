@@ -7,8 +7,7 @@ summary JSON (from ``scripts/build_eval_summary.py``). The efficiency figure use
 parameters in **thousands** (×10³) so small students (e.g. ``gaze_micro`` ~50k) stay
 visible next to a MobileNetV3-Small teacher (~1.5M). A separate **predict_speed.pdf**
 compares ms/image (and approximate FPS). ``teacher_arch`` / ``student_arch`` from
-``evaluate.py`` JSON appear in subtitles when present. If files are missing, use
-``--demo`` to emit illustrative curves for LaTeX compilation. Loss curves from CSVs are
+``evaluate.py`` JSON appear in subtitles when present. Loss curves from CSVs are
 trimmed to the first **20 epochs** by default (``--max_plot_epochs``) so long KD runs do not
 crowd the x-axis; use ``--max_plot_epochs 0`` to plot every logged epoch.
 
@@ -18,7 +17,6 @@ Usage (from ``gaze_kd_project``)::
         --metrics_teacher runs/m_teacher.csv --metrics_student runs/m_student.csv \\
         --metrics_kd runs/m_kd.csv --out_dir paper/figures
 
-    python scripts/make_paper_figures.py --demo --out_dir paper/figures
 """
 
 from __future__ import annotations

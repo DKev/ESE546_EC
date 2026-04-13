@@ -1,7 +1,13 @@
 % Course report (AMS style). Compile from this directory:
 %   pdflatex report.tex && pdflatex report.tex
-% Figures: run ``python ../scripts/make_paper_figures.py --demo --out_dir figures``
-% after training, omit ``--demo`` and pass real CSV/JSON paths (see README).
+% Figures (from repo root ``gaze_kd_project/``): merge three ``evaluate.py --export_json``
+% outputs with ``scripts/build_eval_summary.py``, then run
+%   python scripts/make_paper_figures.py --out_dir paper/figures \
+%     --summary runs/summary_mpi.json \
+%     --metrics_teacher runs/m_teacher_mpi.csv --metrics_student runs/m_student_mpi.csv \
+%     --metrics_kd runs/m_kd_mpi.csv [--scatter_npz ...]
+% Loss curves use the metrics CSVs (first 20 epochs by default: ``--max_plot_epochs``).
+% See README ``Paper, plots, and LaTeX``.
 
 \documentclass[10pt, reqno, letterpaper, twoside]{amsart}
 \usepackage[margin=1in]{geometry}
@@ -28,73 +34,73 @@
 \begin{document}
 
 \begin{abstract}
-We study two-dimensional gaze regression from face images with a compact model suitable for mobile deployment. We compare teacher backbones: a heavy ResNet-18 versus a lighter MobileNetV2 teacher; the student is MobileNetV3-Small, trained either with labels alone or with an additional MSE distillation term to the teacher. In our experiments (synthetic sanity checks and MPIIGaze-style normalized crops with limited training subsets), ResNet-18 tended to \emph{overfit} and achieved \emph{worse validation error} than the MobileNet-based configurations---suggesting this regression task does not require very deep representational capacity. We compare accuracy, parameter count, checkpoint size, and single-image latency on the same validation split, and discuss angular gaze metrics for future work.
+We train small CNNs to regress 2D gaze $(g_x,g_y)$ from face images, with an eye toward models that could run on a phone. The implementation swaps torchvision backbones for the teacher (ResNet-18, MobileNetV2, or MobileNetV3-Small) and gives several student options, including a hand-built depthwise network (\texttt{gaze\_micro}, on the order of $50$k parameters). Besides plain MSE on labels we try knowledge distillation: add an MSE term that pulls the student toward the teacher's output. On MPIIGaze we do not use every training frame each epoch; we cap at $10{,}000$ samples per epoch with a fixed order flag in the dataloader, but we still evaluate on the full validation subjects. With the same number of epochs and similar hyperparameters, that cap actually gave us lower validation error than when we tried to chew through the entire training split first---we do not claim 10k always wins, only that it happened in our setup and probably has to do with overfitting and training time per epoch. ResNet-18 as a teacher still looked worse on val than the smaller nets. Numbers in the paper come from \texttt{evaluate.py} exports and the plotting scripts in the repo.
 \end{abstract}
 
 \maketitle
 
 \section{Introduction}
 
-Gaze estimation supports attention-aware interfaces, accessibility tools, and driver monitoring. Deep models can achieve strong accuracy but often rely on heavy backbones that are costly on phones or embedded GPUs. This project asks whether \emph{knowledge distillation} (KD) can improve a lightweight student network for 2D gaze regression without changing the inference architecture, and whether a \emph{smaller} teacher is preferable when data are limited.
+Gaze from a webcam or front camera shows up in HCI demos, accessibility work, and driver monitoring. The accuracy vs.\ size tradeoff is annoying: ResNets are fine on a GPU, but a 50k-parameter student is closer to what you would actually ship.
 
-We keep the setup deliberately simple: inputs are RGB face crops; outputs are two continuous coordinates $(g_x, g_y)$. Training uses MSE against ground truth; the KD variant adds an MSE term between student and teacher predictions. We found that a ResNet-18 teacher overfit our training regime and underperformed lighter MobileNet-style teachers on validation, which informs our default MobileNetV2 teacher and MobileNetV3-Small student pairing.
+This report describes a course codebase where the task is boring on purpose: resize the crop to $224\times224$, predict two numbers, train with Adam. The only twist we cared about was KD. We also wasted a few GPU hours discovering that a ResNet-18 teacher likes to memorize our MPII train split while validation flatlines, which is why most of the plots use MobileNet-sized teachers instead.
 
 \subsection{Contributions}
 
 \begin{itemize}
-  \item A modular PyTorch codebase with CSV-based labels, a choice of teacher (MobileNetV2 by default in our study, or ResNet-18), MobileNetV3-Small student, and KD training with configurable $\alpha$.
-  \item Scripts to generate a synthetic dataset for quick experiments, log training curves, export evaluation JSON, and build PDF figures for the report.
-  \item An empirical comparison of regression error, model size, and inference latency, including an informal ablation on teacher depth/capacity (ResNet-18 vs.\ MobileNetV2) and discussion of MPIIGaze-style data.
+  \item PyTorch code: MPIIGaze reader or CSV, teacher/student switches (\texttt{gaze\_micro} included), KD with weight $\alpha$.
+  \item Training logs to CSV, eval to JSON, and a \texttt{make\_paper\_figures.py} helper that builds the PDFs we embed below.
+  \item A short empirical section: regression errors, parameter counts, and timing on one validation protocol.
 \end{itemize}
 
 \section{Background}
 
-Let $\mathbf{I} \in \mathbb{R}^{3\times H \times W}$ denote a face image and $\mathbf{g} = (g_x, g_y)$ the target gaze vector. A network $f_\theta$ predicts $\hat{\mathbf{g}} = f_\theta(\mathbf{I})$. Supervised training minimizes
+Let $\mathbf{I} \in \mathbb{R}^{3\times H \times W}$ be the input image and $\mathbf{g} = (g_x, g_y)$ the label. The network outputs $\hat{\mathbf{g}} = f_\theta(\mathbf{I})$. Supervised loss:
 \[
   \mathcal{L}_{\mathrm{gt}}(\theta) = \big\lVert \hat{\mathbf{g}} - \mathbf{g} \big\rVert_2^2 .
 \]
-Given a fixed teacher $f_{\theta_T}$, distillation adds
+Fix a teacher $f_{\theta_T}$. Distillation adds
 \[
   \mathcal{L}_{\mathrm{kd}}(\theta_S) = \big\lVert f_{\theta_S}(\mathbf{I}) - f_{\theta_T}(\mathbf{I}) \big\rVert_2^2 ,
 \]
-and we minimize $\mathcal{L}_{\mathrm{gt}}(\theta_S) + \alpha \mathcal{L}_{\mathrm{kd}}(\theta_S)$ with the teacher in eval mode and gradients disabled. This matches regression KD with MSE targets; more advanced variants match intermediate features or temperature-scaled logits in classification.
+and we minimize $\mathcal{L}_{\mathrm{gt}}(\theta_S) + \alpha \mathcal{L}_{\mathrm{kd}}(\theta_S)$ with the teacher frozen. Classification KD uses temperature-soft targets; here we stayed with plain MSE on the 2-D vector because it was easy to debug.
 
 \section{Related Work}
 
-Appearance-based gaze estimation was popularized in part by MPIIGaze~\cite{zhang15mpiigaze}, which records everyday laptop users and provides normalized eye images and calibration-aware labels. Many follow-ups explore larger architectures, multi-task learning, and geometry-aware losses. For mobile deployment, efficient CNNs such as MobileNetV3~\cite{howard19mobilenetv3} trade accuracy for fewer multiply-adds. Knowledge distillation~\cite{hinton15kd} transfers information from a large teacher to a smaller student; we use the simplest output-level MSE form for transparency in a course setting.
+MPIIGaze~\cite{zhang15mpiigaze} is the dataset people cite for ``in the wild'' laptop gaze. MobileNetV3~\cite{howard19mobilenetv3} is one of the standard efficient backbones if you care about FLOPs. Hinton et al.~\cite{hinton15kd} introduced distillation for classification; we borrowed the idea but applied it to regression.
 
 \section{Approach}
 
-\paragraph{Data interface.} Images and labels are listed in CSV files with columns \texttt{image\_path}, \texttt{gaze\_x}, \texttt{gaze\_y}. Paths may be absolute or relative to a configurable root directory. The \texttt{GazeDataset} class applies resize to $224\times 224$, conversion to tensor, and ImageNet normalization to match torchvision pretrained backbones.
+\paragraph{Data.} CSV mode expects \texttt{image\_path}, \texttt{gaze\_x}, \texttt{gaze\_y}. The loader resizes to $224\times224$ and uses ImageNet mean/std because the torchvision weights assume that.
 
-\paragraph{Models.} The teacher backbone is configurable: we primarily use MobileNetV2 (final classifier layer replaced by a linear map to two outputs). For comparison we also trained a ResNet-18 teacher with the same head. The student is always MobileNetV3-Small with an analogous two-dimensional output. All backbones use ImageNet initialization for convolutional features when available.
+\paragraph{Models.} Teacher: swap the classifier head for a linear layer with two outputs. Student: either another torchvision tiny model or \texttt{gaze\_micro} (depthwise separable blocks, no ImageNet init).
 
-\paragraph{Training.} We use Adam with learning rate $10^{-4}$, batch size $64$, and $20$ epochs unless noted. Checkpoints with the best validation objective are saved: validation MSE for teacher and student baseline, and the combined KD validation loss for the distilled student. On NVIDIA GPUs we enable \textbf{automatic mixed precision} (AMP) via PyTorch \texttt{autocast} and \texttt{GradScaler} (training flag \texttt{--amp}), which speeds up forward/backward passes with minimal change to the optimization recipe; CPU-only runs omit AMP. CUDA uses cuDNN benchmark mode and higher matmul precision where supported for throughput.
+\paragraph{Training.} Adam, $10^{-4}$, batch $64$, usually $20$ epochs unless we say otherwise. Best checkpoint = best validation score (MSE for teacher and baseline student; combined KD loss for the distilled run). On our machine we turned on AMP (\texttt{--amp}) for speed; CPU runs skip it.
 
-\paragraph{Evaluation.} We report MSE (mean squared $\ell_2$ error per sample), mean absolute error averaged over the two coordinates, and mean Euclidean distance between $\hat{\mathbf{g}}$ and $\mathbf{g}$. We also report parameter count, checkpoint file size on disk, and mean milliseconds per image on a dummy tensor with batch size one after warmup.
+\paragraph{Metrics.} MSE, MAE, mean L2 between $\hat{\mathbf{g}}$ and $\mathbf{g}$, plus parameter count and ms/image on a dummy batch-1 forward after a short warmup (whatever \texttt{evaluate.py} prints).
 
 \section{Experimental Results}
 
 \subsection{Data and protocol}
 
-For reproducible end-to-end debugging, we include a \emph{synthetic} generator that renders a simple face ellipse and a pupil whose offset encodes $(g_x,g_y) \in [-1,1]^2$. This dataset is \textbf{not} a substitute for MPIIGaze in the wild, but it provides consistent labels and fast iteration. For final course reporting, download MPIIGaze from the MPI-INF or DaRUS mirrors, convert labels to your $(g_x,g_y)$ convention, and export the same CSV format.
+We trained on MPIIGaze normalized patches via \texttt{--dataset mpiigaze}. Train and val use different people (e.g.\ held-out \texttt{p14}, \texttt{p15} in the README example). The important detail for reproducing our table: \textbf{train is subsampled to 10{,}000 frames per epoch} (\texttt{--mpi\_max\_train\_samples 10000}), deterministic order. Val is \textbf{not} subsampled.
 
-We split data into training and validation CSV files. All models are evaluated on the same validation CSV. Reported training runs use \textbf{AMP on GPU} as above unless stated otherwise. Training curves are logged with optional \texttt{--metrics\_csv}; evaluation metrics are exported with \texttt{--export\_json} and merged for plotting.
+We log curves with \texttt{--metrics\_csv}. After training, \texttt{evaluate.py --export\_json} three times, then \texttt{build\_eval\_summary.py}, then \texttt{make\_paper\_figures.py}. The loss PDF only looks at the CSVs; the bar charts and size/speed figures read the merged JSON. If a KD run went 40 epochs, the plot script clips to the first 20 points by default so the x-axis is readable (\texttt{--max\_plot\_epochs}).
 
 \subsection{Quantitative comparison}
 
-Table~\ref{tab:main} summarizes representative numbers. \emph{Replace these entries} with the output of \texttt{scripts/build\_eval\_summary.py} on your machine; the figures below were generated with \texttt{scripts/make\_paper\_figures.py} and default placeholders if you have not trained yet.
+Table~\ref{tab:main} is filled from the same JSON the bar chart uses. Figure~\ref{fig:loss} is from the CSVs.
 
 \begin{table}[H]
   \centering
-  \caption{Validation metrics and efficiency (fill with your \texttt{summary.json}).}
+  \caption{Validation metrics and efficiency (from merged evaluation JSON).}
   \label{tab:main}
   \begin{tabular}{lcccccc}
     \toprule
     Model & MSE $\downarrow$ & MAE $\downarrow$ & Mean L2 $\downarrow$ & Params & ms/img $\downarrow$ \\
     \midrule
-    Teacher (MobileNetV2) & -- & -- & -- & -- & -- \\
-    Student baseline    & -- & -- & -- & -- & -- \\
+    Teacher & -- & -- & -- & -- & -- \\
+    Student (baseline) & -- & -- & -- & -- & -- \\
     Student + KD        & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
@@ -103,46 +109,54 @@ Table~\ref{tab:main} summarizes representative numbers. \emph{Replace these entr
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{loss_curves.pdf}
-  \caption{Validation MSE vs.\ epoch. For the KD run we plot the MSE between student and ground truth on the validation set to compare fairly with supervised training.}
+  \caption{Validation MSE per epoch from \texttt{--metrics\_csv}. KD line is student vs.\ ground truth on val (same as the other two curves). First 20 epochs shown by default if the log is longer.}
   \label{fig:loss}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{metrics_compare.pdf}
-  \caption{Bar comparison of MSE, MAE, and mean Euclidean error across models.}
+  \caption{Bars from merged eval JSON. Should match Table~\ref{tab:main}.}
   \label{fig:metrics}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{efficiency.pdf}
-  \caption{Parameter count (thousands; bar labels show M/k) and per-image latency on a dummy input (batch size one).}
+  \caption{Left: parameters in thousands (annotations in M or k). Right: latency, batch 1, same setup as \texttt{evaluate.py}.}
   \label{fig:eff}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{predict_speed.pdf}
-  \caption{Prediction latency (ms per image) and approximate FPS on the same dummy-input protocol as \texttt{evaluate.py} (batch size one after warmup).}
+  \caption{Same timing idea as the right panel of Figure~\ref{fig:eff}, pulled out as its own figure with FPS text.}
   \label{fig:speed}
 \end{figure}
 
-\subsection{Teacher backbone: ResNet-18 vs.\ MobileNet-style models}
+\subsection{Training on 10k examples per epoch}
 
-In early experiments we trained a \textbf{ResNet-18} teacher and compared it against a lighter \textbf{MobileNetV2} teacher, with the \textbf{MobileNetV3-Small} student for the compact path. (Colloquially one might lump the strongest lightweight stack with ``MobileNetV3-class'' shallow networks; we do not use a literal VGG-16 block stack in code, but the takeaway is the same: \emph{moderate-capacity} CNNs suffice.)
+Full MPIIGaze training is huge. One epoch over everything was slow enough that we started subsampling. After we fixed val to the full held-out people, we were surprised that 10k-per-epoch looked better on val than ``eat the whole train set'' with the same epoch count and roughly the same learning rate.
 
-\textbf{Observation.} On our setup---especially when training on a subset of MPIIGaze normalized crops or similar limited data---ResNet-18 showed clear \textbf{overfitting}: training loss decreased while validation error remained poor or worsened relative to smaller models. Validation metrics were \textbf{better for the MobileNetV2 teacher and for the MobileNetV3-Small baselines} than for the ResNet-18 teacher under the same protocol (same $(g_x,g_y)$ targets, augmentation, and epochs).
+Smaller models (especially \texttt{gaze\_micro}) have no business memorizing a million crops in 20 epochs anyway. Truncating each epoch might act like a crude regularizer. Shorter epochs also mean we actually finish updates in reasonable wall time, which matters when you are iterating on bugs. A third boring possibility: MPIIGaze is messy across sessions; a fixed 10k slice is not representative of the full distribution, so comparing to ``full data'' without retuning steps or LR is apples-to-oranges.
 
-\textbf{Takeaway.} Mapping a fixed-resolution eye patch to two scalar gaze coordinates appears to be a \textbf{relatively low-complexity} regression problem compared to ImageNet classification: very deep, wide teachers are not only unnecessary but can \textbf{hurt generalization} when data are finite. This motivated our default choice of a MobileNetV2 teacher for KD in the reported pipeline.
+What we would try next if this were not a deadline: sweep $N$, train longer on full data with decay, and report angular error instead of $(g_x,g_y)$ MSE.
 
-\subsection{Interpretation}
+\subsection{ResNet-18 vs.\ smaller teachers}
 
-With a well-matched (non-overfitting) teacher, we still expect the teacher to achieve low regression error; the student baseline shows what MobileNetV3-Small learns from labels alone. KD moves the student toward the teacher's predictions; gains depend on $\alpha$, training length, and whether the teacher is both accurate and not overly regularized to the training set. If KD underperforms, reduce $\alpha$, train longer, or verify the teacher's validation curve.
+We tried ResNet-18 as a teacher because it is the default ``serious'' backbone. On our MPII setup it overfit: train MSE dropped, val did not follow. MobileNetV2 / MobileNetV3-Small behaved more sanely for the same $(g_x,g_y)$ targets. So the ``big teacher'' story did not work out here; the patch-to-two-numbers mapping just is not ImageNet-classification hard.
+
+\subsection{KD}
+
+If the teacher is reasonable, KD sometimes shaves a bit off student val MSE relative to labels alone; sometimes it does not. $\alpha$ matters, and a bad teacher hurts. We mostly treated $\alpha$ as a knob to tune by hand.
 
 \section{Discussion}
 
-This project intentionally uses MSE in image-space gaze coordinates for clarity. Published gaze work often reports \emph{angular error} between predicted and true gaze directions in camera space; adopting that metric requires consistent 3D geometry or camera calibration and is an important next step. Stronger data augmentation (color jitter, controlled crops) may improve generalization but must respect how labels are defined. Feature-level distillation or logits-style matching could provide richer supervision than output MSE alone. For deployment, exporting the student to ONNX and optimizing with TensorRT (NVIDIA) or mobile runtimes (Core ML, TFLite) would align evaluation with production latency.
+MSE in normalized label space is easy to implement but not what papers usually report for gaze (they want degrees). Getting angular error right needs geometry we did not implement. Augmentation (color jitter, etc.) might help but we kept the pipeline minimal so we could finish the assignment.
+
+Exporting the student to ONNX or TFLite would be the next engineering step if this were a product. For the course, the PyTorch timings were enough.
+
+The 10k cap is a reproducibility footnote: if someone reruns our commands, they need the same \texttt{--mpi\_max\_train\_samples}, the same val persons, and the same arch flags or the numbers will drift.
 
 \section*{References}
 
